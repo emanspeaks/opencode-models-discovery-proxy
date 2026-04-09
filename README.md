@@ -1,4 +1,4 @@
-# opencode-model-discovery
+# opencode-models-discovery
 
 > Forked from [opencode-lmstudio](https://github.com/nicktasios/opencode-lmstudio) and expanded to support **any OpenAI-compatible provider**.
 
@@ -20,9 +20,9 @@ OpenCode plugin for auto-discovery of OpenAI-compatible models with dynamic prov
 ## Installation
 
 ```bash
-npm install opencode-model-discovery
+npm install opencode-models-discovery
 # or
-bun add opencode-model-discovery
+bun add opencode-models-discovery
 ```
 
 ## Usage
@@ -33,7 +33,7 @@ Add the plugin to your `opencode.json`:
 {
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
-    "opencode-model-discovery@latest"
+    "opencode-models-discovery@latest"
   ],
   "provider": {
     "ollama": {
@@ -61,7 +61,7 @@ The plugin configuration is placed in the `plugin` array using tuple format `["p
 ```json
 {
   "plugin": [
-    ["opencode-model-discovery", {
+    ["opencode-models-discovery", {
       "providers": {
         "include": [],
         "exclude": []
@@ -87,7 +87,7 @@ Control which providers are discovered:
 ```json
 {
   "plugin": [
-    ["opencode-model-discovery", {
+    ["opencode-models-discovery", {
       "providers": {
         "include": ["ollama"],
         "exclude": ["lmstudio"]
