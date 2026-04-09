@@ -1,5 +1,8 @@
 # opencode-models-discovery
 
+[![npm version](https://img.shields.io/npm/v/opencode-models-discovery.svg?color=blue)](https://www.npmjs.com/package/opencode-models-discovery)
+[![npm downloads](https://img.shields.io/npm/dt/opencode-models-discovery.svg)](https://www.npmjs.com/package/opencode-models-discovery)
+
 > Forked from [opencode-lmstudio](https://github.com/nicktasios/opencode-lmstudio) and expanded to support **any OpenAI-compatible provider**.
 
 OpenCode plugin for auto-discovery of OpenAI-compatible models with dynamic provider configuration.
@@ -119,7 +122,7 @@ The plugin supports any OpenAI-compatible provider. Here are the most common one
 | **Text Generation WebUI** | 5000 | OpenAI-compatible extension | `@ai-sdk/openai-compatible` |
 | **FastChat (Vicuna)** | 8001 | Multi-model serving | `@ai-sdk/openai-compatible` |
 | **vLLM** | 8000 | High-performance inference | `@ai-sdk/openai-compatible` |
-| **Anysphere (Cursor)** |  | IDE with AI completion | `@ai-sdk/anthropic` (with `/v1` backend) |
+| **CLIProxyAPI** | 8317 | A LLM proxy server  | `@ai-sdk/anthropic` (with `/v1` backend) & `@ai-sdk/openai-compatible` |
 
 #### Anthropic API with Custom Backend
 
