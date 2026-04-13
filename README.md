@@ -247,3 +247,7 @@ MIT
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Disclaimer
+
+This project is not built by the OpenCode team and is not affiliated with OpenCode in any way.
