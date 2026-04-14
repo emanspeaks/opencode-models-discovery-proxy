@@ -83,7 +83,7 @@ The plugin configuration is placed in the `plugin` array using tuple format `["p
 }
 ```
 
-Set `smartModelName` to `true` if you want discovered models to use human-friendly display names instead of the raw `model_id`.
+Set `smartModelName` to `true` if you want discovered models to use human-friendly display names instead of the raw `model_id`. (e.g., "Qwen3 30B A3B" instead of "qwen/qwen3-30b-a3b")
 
 #### Provider Filtering
 
