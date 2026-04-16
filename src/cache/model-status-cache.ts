@@ -42,7 +42,7 @@ export class ModelStatusCache {
     } catch (error) {
       // If we have stale cached data, return it as fallback but mark as potentially invalid
       if (cached) {
-        console.warn(`[opencode-model-discovery] Using stale cache data due to fetch error`, { 
+        console.warn(`[opencode-models-discovery] Using stale cache data due to fetch error`, { 
           baseURL, 
           age: now - cached.timestamp,
           error: error instanceof Error ? error.message : String(error) 

@@ -90,7 +90,7 @@ export async function retryWithBackoff<T>(
       }
       
       const delay = baseDelay * Math.pow(2, attempt)
-      console.warn(`[opencode-model-discovery] Retrying operation after ${delay}ms`, { 
+      console.warn(`[opencode-models-discovery] Retrying operation after ${delay}ms`, { 
         attempt: attempt + 1, 
         maxRetries: maxRetries + 1,
         error: error instanceof Error ? error.message : String(error)

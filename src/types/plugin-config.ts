@@ -65,7 +65,7 @@ function toRegExp(pattern: string, logger?: PluginLogger): RegExp | null {
     if (logger) {
       logger.warn('Ignoring invalid model regex', { category: 'filtering', pattern })
     } else {
-      console.warn(`[opencode-model-discovery] Ignoring invalid model regex: ${pattern}`)
+      console.warn(`[opencode-models-discovery] Ignoring invalid model regex: ${pattern}`)
     }
     return null
   }

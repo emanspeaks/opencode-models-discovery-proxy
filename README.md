@@ -3,22 +3,23 @@
 [![npm version](https://img.shields.io/npm/v/opencode-models-discovery.svg?color=blue)](https://www.npmjs.com/package/opencode-models-discovery)
 [![npm downloads](https://img.shields.io/npm/dt/opencode-models-discovery.svg)](https://www.npmjs.com/package/opencode-models-discovery)
 
-> Forked from [opencode-lmstudio](https://github.com/nicktasios/opencode-lmstudio) and expanded to support **any OpenAI-compatible provider**.
+> A universal OpenCode plugin for dynamic model discovery across **any OpenAI-compatible provider**.
 
-OpenCode plugin for auto-discovery of OpenAI-compatible models with dynamic provider configuration.
+Originally inspired by [opencode-lmstudio](https://github.com/nicktasios/opencode-lmstudio), this project has been fully refactored into a general-purpose model discovery plugin with richer configuration controls for providers, models, naming, caching, and discovery behavior.
 
 ## Features
 
-- **Multi-Provider Support**: Works with any OpenAI-compatible provider (LM Studio, Ollama, LocalAI, etc.)
-- **Dynamic Model Discovery**: Queries provider's `/v1/models` endpoint to discover available models
-- **Auto-Injection**: Automatically adds unconfigured models to provider configuration
-- **Smart Model Formatting**: Optional formatting for better readability when explicitly enabled
-- **Organization Owner Extraction**: Extracts and sets `organizationOwner` field from model IDs
-- **Health Check Monitoring**: Verifies providers are accessible before attempting operations
+- **Universal Provider Support**: Works with any OpenAI-compatible provider (LM Studio, Ollama, LocalAI, gateways, and more)
+- **Dynamic Model Discovery**: Queries each provider's `/v1/models` endpoint to discover available models
+- **Auto-Injection**: Automatically adds unconfigured models into OpenCode provider config
+- **Provider Filtering**: Include or exclude specific providers from discovery
+- **Model Filtering**: Use regex rules to precisely control which discovered models are injected
+- **Configurable Discovery**: Control discovery behavior with enable/disable switches and TTL-based caching
+- **Smart Model Formatting**: Optional human-friendly display names for discovered models
+- **Organization Owner Extraction**: Extracts and sets `organizationOwner` from model IDs when available
+- **Health Check Monitoring**: Verifies providers are accessible before attempting discovery
 - **Model Merging**: Intelligently merges discovered models with existing configuration
-- **Comprehensive Caching**: Reduces API calls with intelligent caching system
-- **Error Handling**: Smart error categorization with auto-fix suggestions
-- **Configurable Discovery**: Enable/disable discovery and filter providers
+- **Error Handling**: Smart error categorization with actionable suggestions
 
 ## Installation
 
@@ -239,7 +240,7 @@ This means providers using `@ai-sdk/anthropic` with OpenAI-compatible backends (
 
 ## Logging
 
-When available, the plugin writes logs through OpenCode's structured server log API via `client.app.log(...)` using the service name `opencode-model-discovery`.
+When available, the plugin writes logs through OpenCode's structured server log API via `client.app.log(...)` using the service name `opencode-models-discovery`.
 
 If structured logging is unavailable in the runtime, the plugin falls back to prefixed `console.*` output. Key log categories are emitted through metadata such as `plugin`, `config`, `discovery`, `event`, and `filtering` to make local debugging easier with `opencode --print-logs`.
 

@@ -107,12 +107,11 @@ bun add ${name}@${version}
 
 ### Features
 
-- **Auto-detection**: Automatically detects LM Studio running on common ports
-- **Dynamic Model Discovery**: Queries LM Studio's \`/v1/models\` endpoint
+- **Dynamic Model Discovery**: Queries OpenAI-compatible providers through the standard \`/v1/models\` endpoint
 - **Smart Model Formatting**: Automatically formats model names for better readability
 - **Organization Owner Extraction**: Extracts and sets \`organizationOwner\` field
-- **Health Check Monitoring**: Verifies LM Studio is accessible
-- **Automatic Configuration**: Auto-creates \`lmstudio\` provider if detected
+- **Health Check Monitoring**: Verifies providers are accessible before discovery
+- **Flexible Configuration**: Supports provider filtering, model filtering, and configurable discovery behavior
 - **Model Merging**: Intelligently merges discovered models with existing configuration
 - **Comprehensive Caching**: Reduces API calls with intelligent caching
 - **Error Handling**: Smart error categorization with auto-fix suggestions`

@@ -224,7 +224,7 @@ provider.npm === "@ai-sdk/openai-compatible"
 ```
 
 ### Supported Providers
-- LM Studio (ports: 1234, 8080, 11434)
+- LM Studio (default port: 1234)
 - Ollama (port: 11434)
 - LocalAI (port: 8080)
 - Any provider using `@ai-sdk/openai-compatible`
@@ -252,7 +252,7 @@ provider.npm === "@ai-sdk/openai-compatible"
 The following items are **not planned** for this plugin:
 
 - **Validation**: This plugin focuses on automatic model discovery only. Validation (checking if a model is loaded/available) is handled by the AI SDK or provider.
-- LM Studio-specific management tools (load/unload/switch models)
+- Provider-specific management tools (load/unload/switch models, server-side controls)
 - Server start/stop controls
 - Model search tools
 - Performance analytics
