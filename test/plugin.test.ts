@@ -446,6 +446,108 @@ describe('ModelDiscovery Plugin', () => {
       expect(config.provider?.ollama?.models).toEqual({})
     })
 
+    it('should allow provider-level discovery when global discovery is disabled', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: [
+            { id: 'test-model', object: 'model', created: 1234567890, owned_by: 'local' }
+          ]
+        })
+      })
+
+      const mockInput: any = {
+        client: mockClient,
+        project: {
+          id: 'test-project',
+          name: 'test',
+          path: '/tmp',
+          worktree: '',
+          time: { created: Date.now() }
+        },
+        directory: '/tmp',
+        worktree: '',
+        $: vi.fn()
+      }
+
+      const hooksWithConfig = await ModelDiscoveryPlugin(mockInput, {
+        discovery: {
+          enabled: false
+        }
+      })
+
+      const config: any = {
+        provider: {
+          ollama: {
+            npm: '@ai-sdk/openai-compatible',
+            name: 'Ollama',
+            options: {
+              baseURL: 'http://127.0.0.1:11434/v1',
+              modelsDiscovery: {
+                enabled: true
+              }
+            },
+            models: {}
+          }
+        }
+      }
+
+      await hooksWithConfig.config(config)
+
+      expect(config.provider?.ollama?.models?.['test-model']).toBeDefined()
+    })
+
+    it('should skip provider when provider-level discovery is disabled', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: [
+            { id: 'test-model', object: 'model', created: 1234567890, owned_by: 'local' }
+          ]
+        })
+      })
+
+      const mockInput: any = {
+        client: mockClient,
+        project: {
+          id: 'test-project',
+          name: 'test',
+          path: '/tmp',
+          worktree: '',
+          time: { created: Date.now() }
+        },
+        directory: '/tmp',
+        worktree: '',
+        $: vi.fn()
+      }
+
+      const hooksWithConfig = await ModelDiscoveryPlugin(mockInput, {
+        providers: {
+          include: ['ollama']
+        }
+      })
+
+      const config: any = {
+        provider: {
+          ollama: {
+            npm: '@ai-sdk/openai-compatible',
+            name: 'Ollama',
+            options: {
+              baseURL: 'http://127.0.0.1:11434/v1',
+              modelsDiscovery: {
+                enabled: false
+              }
+            },
+            models: {}
+          }
+        }
+      }
+
+      await hooksWithConfig.config(config)
+
+      expect(config.provider?.ollama?.models).toEqual({})
+    })
+
     it('should only discover models matching includeRegex', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
@@ -590,6 +692,119 @@ describe('ModelDiscovery Plugin', () => {
 
       expect(config.provider.ollama.models['keep-me']).toEqual({ name: 'Keep Me' })
       expect(config.provider.ollama.models['discover-me']).toBeDefined()
+    })
+
+    it('should prefer provider-level model filters over global filters', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: [
+            { id: 'qwen/qwen3-30b-a3b', object: 'model', created: 1234567890, owned_by: 'local' },
+            { id: 'bge-m3', object: 'model', created: 1234567890, owned_by: 'local' }
+          ]
+        })
+      })
+
+      const mockInput: any = {
+        client: mockClient,
+        project: {
+          id: 'test-project',
+          name: 'test',
+          path: '/tmp',
+          worktree: '',
+          time: { created: Date.now() }
+        },
+        directory: '/tmp',
+        worktree: '',
+        $: vi.fn()
+      }
+
+      const hooksWithConfig = await ModelDiscoveryPlugin(mockInput, {
+        smartModelName: false,
+        models: {
+          includeRegex: ['^bge-']
+        }
+      })
+
+      const config: any = {
+        provider: {
+          ollama: {
+            npm: '@ai-sdk/openai-compatible',
+            name: 'Ollama',
+            options: {
+              baseURL: 'http://127.0.0.1:11434/v1',
+              modelsDiscovery: {
+                smartModelName: true,
+                models: {
+                  includeRegex: ['^qwen/']
+                }
+              }
+            },
+            models: {}
+          }
+        }
+      }
+
+      await hooksWithConfig.config(config)
+
+      expect(config.provider.ollama.models['qwen/qwen3-30b-a3b']).toEqual(
+        expect.objectContaining({
+          name: 'Qwen3 30B A3B'
+        })
+      )
+      expect(config.provider.ollama.models['bge-m3']).toBeUndefined()
+    })
+
+    it('should use global model filters when provider-level filters are not configured', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: [
+            { id: 'qwen/qwen3-30b-a3b', object: 'model', created: 1234567890, owned_by: 'local' },
+            { id: 'qwen/qwen3-8b', object: 'model', created: 1234567890, owned_by: 'local' },
+            { id: 'bge-m3', object: 'model', created: 1234567890, owned_by: 'local' }
+          ]
+        })
+      })
+
+      const mockInput: any = {
+        client: mockClient,
+        project: {
+          id: 'test-project',
+          name: 'test',
+          path: '/tmp',
+          worktree: '',
+          time: { created: Date.now() }
+        },
+        directory: '/tmp',
+        worktree: '',
+        $: vi.fn()
+      }
+
+      const hooksWithConfig = await ModelDiscoveryPlugin(mockInput, {
+        models: {
+          includeRegex: ['^qwen/']
+        }
+      })
+
+      const config: any = {
+        provider: {
+          ollama: {
+            npm: '@ai-sdk/openai-compatible',
+            name: 'Ollama',
+            options: {
+              baseURL: 'http://127.0.0.1:11434/v1'
+            },
+            models: {}
+          }
+        }
+      }
+
+      await hooksWithConfig.config(config)
+
+      expect(config.provider.ollama.models['qwen/qwen3-30b-a3b']).toBeDefined()
+      expect(config.provider.ollama.models['qwen/qwen3-8b']).toBeDefined()
+      expect(config.provider.ollama.models['bge-m3']).toBeUndefined()
     })
   })
 

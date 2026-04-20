@@ -13,9 +13,9 @@ export const ModelDiscoveryPlugin: Plugin = async (input: PluginInput, options?:
   if (!client || typeof client !== 'object') {
     logger.error('Invalid client provided to plugin')
     return {
-      config: async () => {},
-      event: async () => {},
-      "chat.params": async () => {}
+      config: async () => { },
+      event: async () => { },
+      "chat.params": async () => { }
     }
   }
 
@@ -36,4 +36,4 @@ export const ModelDiscoveryPlugin: Plugin = async (input: PluginInput, options?:
   }
 }
 
-export const LMStudioPlugin = ModelDiscoveryPlugin
+//export const LMStudioPlugin = ModelDiscoveryPlugin

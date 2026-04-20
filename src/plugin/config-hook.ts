@@ -20,7 +20,7 @@ export function createConfigHook(
     const validation = validateConfig(config)
     if (!validation.isValid) {
       logger.error('Invalid config provided', { errors: validation.errors })
-      toastNotifier.error("Plugin configuration is invalid", "Configuration Error").catch(() => {})
+      toastNotifier.error("Plugin configuration is invalid", "Configuration Error").catch(() => { })
       return
     }
 
@@ -28,10 +28,6 @@ export function createConfigHook(
       logger.warn('Config warnings', { warnings: validation.warnings })
     }
 
-    if (pluginConfig.discovery?.enabled === false) {
-      logger.info('Discovery disabled by configuration')
-      return
-    }
 
     const discoveryPromise = enhanceConfig(
       config,

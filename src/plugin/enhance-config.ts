@@ -1,14 +1,11 @@
-import { ModelStatusCache } from '../cache/model-status-cache'
 import { ToastNotifier } from '../ui/toast-notifier'
 import { categorizeModel, formatModelName, extractModelOwner } from '../utils'
 import { normalizeBaseURL, checkProviderHealth, discoverModelsFromProvider, autoDetectOpenAICompatibleProvider, canDiscoverModels } from '../utils/openai-compatible-api'
-import { getProviderFilter, getDiscoveryConfig, getModelRegexFilter, shouldDiscoverModel, shouldDiscoverProvider } from '../types/plugin-config'
+import { getProviderFilter, getDiscoveryConfig, getModelRegexFilter, getProviderModelRegexFilter, shouldDiscoverModel, shouldDiscoverProviderWithOverride } from '../types/plugin-config'
 import type { PluginLogger } from './logger'
 import type { PluginInput } from '@opencode-ai/plugin'
 import type { OpenAIModel } from '../types'
 import type { PluginConfig } from '../types/plugin-config'
-
-const modelStatusCache = new ModelStatusCache()
 
 interface DiscoveredProvider {
   name: string
@@ -23,23 +20,24 @@ export async function enhanceConfig(
   pluginConfig: PluginConfig,
   logger: PluginLogger
 ): Promise<void> {
-  modelStatusCache.invalidateAll()
-  
   try {
     const providers = config.provider || {}
     const openAICompatibleProviders: DiscoveredProvider[] = []
     const providerFilter = getProviderFilter(pluginConfig)
     const modelRegexFilter = getModelRegexFilter(pluginConfig, logger.child({ category: 'filtering' }))
     const discoveryConfig = getDiscoveryConfig(pluginConfig)
+    const globalDiscoveryEnabled = discoveryConfig.enabled
 
     for (const [providerName, providerConfig] of Object.entries(providers)) {
       const p = providerConfig as any
-      
+      const providerDiscoveryConfig = p.options?.modelsDiscovery ?? {}
+
       if (!canDiscoverModels(p)) {
         continue
       }
 
-      if (!shouldDiscoverProvider(providerName, providerFilter)) {
+      if (!shouldDiscoverProviderWithOverride(providerName, providerFilter, globalDiscoveryEnabled, providerDiscoveryConfig)) {
+        logger.debug(`Provider ${providerName} model discovery disabled by configuration`)
         continue
       }
 
@@ -81,11 +79,18 @@ export async function enhanceConfig(
       let chatModelsCount = 0
       let embeddingModelsCount = 0
 
+      const hasProviderModelRegexFilter = !!providerDiscoveryConfig.models?.includeRegex?.length || !!providerDiscoveryConfig.models?.excludeRegex?.length
+      const providerModelRegexFilter = getProviderModelRegexFilter(providerDiscoveryConfig, logger.child({ category: 'filtering' }))
+      let smartModelNameEnabled = providerDiscoveryConfig.smartModelName
+      if (smartModelNameEnabled === undefined) {
+        smartModelNameEnabled = pluginConfig.smartModelName
+      }
+
       for (const model of models) {
         const modelKey = model.id
-
         if (!existingModels[modelKey]) {
-          if (!shouldDiscoverModel(model.id, modelRegexFilter)) {
+          const activeModelRegexFilter = hasProviderModelRegexFilter ? providerModelRegexFilter : modelRegexFilter
+          if (!shouldDiscoverModel(model.id, activeModelRegexFilter)) {
             continue
           }
 
@@ -93,7 +98,7 @@ export async function enhanceConfig(
           const owner = extractModelOwner(model.id)
           const modelConfig: any = {
             id: model.id,
-            name: pluginConfig.smartModelName ? formatModelName(model) : model.id,
+            name: smartModelNameEnabled ? formatModelName(model) : model.id,
           }
 
           if (owner) {
@@ -154,33 +159,10 @@ export async function enhanceConfig(
       }
     }
 
-    try {
-      for (const [providerName, providerConfig] of Object.entries(providers)) {
-        const p = providerConfig as any
-        if (!canDiscoverModels(p) || !shouldDiscoverProvider(providerName, providerFilter)) {
-          continue
-        }
-        if (p.options?.baseURL) {
-          const baseURL = normalizeBaseURL(p.options.baseURL)
-          if (discoveryConfig.ttl) {
-            modelStatusCache.setTTL(baseURL, discoveryConfig.ttl)
-          }
-          if (!modelStatusCache.isValid(baseURL)) {
-            await modelStatusCache.getModels(baseURL, async () => {
-              return await discoverModelsFromProvider(baseURL).then(models => models.map(m => m.id))
-            })
-          }
-        }
-      }
-    } catch (error) {
-      logger.warn('Model status cache refresh failed', {
-        error: error instanceof Error ? error.message : String(error),
-      })
-    }
   } catch (error) {
     logger.error('Unexpected error in enhanceConfig', {
       error: error instanceof Error ? error.message : String(error),
     })
-    toastNotifier.warning("Plugin configuration failed", "Configuration Error").catch(() => {})
+    toastNotifier.warning("Plugin configuration failed", "Configuration Error").catch(() => { })
   }
 }

@@ -1,1 +1,1 @@
-export { ModelDiscoveryPlugin, LMStudioPlugin } from './plugin'
+export { ModelDiscoveryPlugin } from './plugin'
