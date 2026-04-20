@@ -88,6 +88,67 @@ The plugin configuration is placed in the `plugin` array using tuple format `["p
 
 Set `smartModelName` to `true` if you want discovered models to use human-friendly display names instead of the raw `model_id`. (e.g., "Qwen3 30B A3B" instead of "qwen/qwen3-30b-a3b")
 
+#### Provider-Level Discovery Overrides
+
+Each provider can override discovery behavior through `provider.<name>.options.modelsDiscovery`:
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `provider.<name>.options.modelsDiscovery.enabled` | `boolean` | Override global discovery and provider filters for a single provider |
+| `provider.<name>.options.modelsDiscovery.models.includeRegex` | `string[]` | Provider-specific model include filter |
+| `provider.<name>.options.modelsDiscovery.models.excludeRegex` | `string[]` | Provider-specific model exclude filter |
+| `provider.<name>.options.modelsDiscovery.smartModelName` | `boolean` | Override global `smartModelName` for a single provider |
+
+Priority rules:
+
+1. `provider.<name>.options.modelsDiscovery.enabled` overrides global `discovery.enabled` and `providers.include/exclude`
+2. If a provider defines its own `modelsDiscovery.models` filters, those filters replace global `models.includeRegex/excludeRegex` for that provider
+3. If a provider does not define its own model filters, global `models.includeRegex/excludeRegex` are used
+4. `provider.<name>.options.modelsDiscovery.smartModelName` overrides global `smartModelName`
+
+```json
+{
+  "plugin": [
+    ["opencode-models-discovery", {
+      "providers": {
+        "include": ["ollama"]
+      },
+      "models": {
+        "includeRegex": ["^qwen/"]
+      },
+      "discovery": {
+        "enabled": false
+      },
+      "smartModelName": false
+    }]
+  ],
+  "provider": {
+    "lmstudio": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "LM Studio",
+      "options": {
+        "baseURL": "http://127.0.0.1:1234/v1",
+        "modelsDiscovery": {
+          "enabled": true,
+          "models": {
+            "includeRegex": ["^gpt-"]
+          },
+          "smartModelName": true
+        }
+      },
+      "models": {}
+    }
+  }
+}
+```
+
+In this example:
+
+1. Global discovery is disabled
+2. `lmstudio` is still discovered because `modelsDiscovery.enabled` is `true`
+3. `lmstudio` uses `^gpt-` instead of the global `^qwen/` filter
+4. `lmstudio` uses smart model names even though the global setting is `false`
+
 #### Provider Filtering
 
 Control which providers are discovered:
