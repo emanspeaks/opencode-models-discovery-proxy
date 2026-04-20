@@ -24,7 +24,7 @@ export async function enhanceConfig(
   logger: PluginLogger
 ): Promise<void> {
   modelStatusCache.invalidateAll()
-  
+
   try {
     const providers = config.provider || {}
     const openAICompatibleProviders: DiscoveredProvider[] = []
@@ -32,14 +32,29 @@ export async function enhanceConfig(
     const modelRegexFilter = getModelRegexFilter(pluginConfig, logger.child({ category: 'filtering' }))
     const discoveryConfig = getDiscoveryConfig(pluginConfig)
 
+
+    const globalDiscoveryEnabled = discoveryConfig.enabled
+    // Global discovery disabled, check the provider level discovery
+
     for (const [providerName, providerConfig] of Object.entries(providers)) {
       const p = providerConfig as any
-      
+      const discoveryConfigForProvider = p.options.modelsDiscovery || {}
+
+      if (globalDiscoveryEnabled === false) { //global discovery disabled, check the provider level discovery
+        if (discoveryConfigForProvider.enabled !== true) {
+          logger.debug(`Provider ${providerName} model discovery disabled by configuration`)
+          continue
+        }
+      }
+
       if (!canDiscoverModels(p)) {
         continue
       }
 
-      if (!shouldDiscoverProvider(providerName, providerFilter)) {
+      // be careful, here we need to check both provider filter and provider level discovery
+      // the p.options.modelsDiscovery has higher priority than provider filter
+      if (!shouldDiscoverProvider(providerName, providerFilter) && !discoveryConfigForProvider.enabled) {
+        logger.debug(`Provider ${providerName} model discovery disabled by filter configuration`)
         continue
       }
 
@@ -81,11 +96,20 @@ export async function enhanceConfig(
       let chatModelsCount = 0
       let embeddingModelsCount = 0
 
+      // model level config
+      const hasModelRegexFilterInProviderConfig = !!discoveryConfigForProvider.models?.includeRegex?.length || !!discoveryConfigForProvider.models?.excludeRegex?.length
+      const modelRegexFilterInProviderConfig = getModelRegexFilter(discoveryConfigForProvider, logger.child({ category: 'filtering' }))
+      let smartModelNameEnabled = discoveryConfigForProvider.smartModelName
+      if (smartModelNameEnabled === undefined) {
+        smartModelNameEnabled = pluginConfig.smartModelName
+      }
       for (const model of models) {
         const modelKey = model.id
-
         if (!existingModels[modelKey]) {
-          if (!shouldDiscoverModel(model.id, modelRegexFilter)) {
+          // if provider has model filter, use it, otherwise use global model filter
+          if (hasModelRegexFilterInProviderConfig && !shouldDiscoverModel(model.id, modelRegexFilterInProviderConfig)
+            || !hasModelRegexFilterInProviderConfig && !shouldDiscoverModel(model.id, modelRegexFilter)
+          ) {
             continue
           }
 
@@ -93,7 +117,7 @@ export async function enhanceConfig(
           const owner = extractModelOwner(model.id)
           const modelConfig: any = {
             id: model.id,
-            name: pluginConfig.smartModelName ? formatModelName(model) : model.id,
+            name: smartModelNameEnabled ? formatModelName(model) : model.id,
           }
 
           if (owner) {
@@ -181,6 +205,6 @@ export async function enhanceConfig(
     logger.error('Unexpected error in enhanceConfig', {
       error: error instanceof Error ? error.message : String(error),
     })
-    toastNotifier.warning("Plugin configuration failed", "Configuration Error").catch(() => {})
+    toastNotifier.warning("Plugin configuration failed", "Configuration Error").catch(() => { })
   }
 }
