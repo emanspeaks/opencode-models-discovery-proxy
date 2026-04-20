@@ -694,7 +694,7 @@ describe('ModelDiscovery Plugin', () => {
       expect(config.provider.ollama.models['discover-me']).toBeDefined()
     })
 
-    it('should keep global model filters and apply provider-level model filters on top', async () => {
+    it('should prefer provider-level model filters over global filters', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
         json: async () => ({
@@ -722,7 +722,7 @@ describe('ModelDiscovery Plugin', () => {
       const hooksWithConfig = await ModelDiscoveryPlugin(mockInput, {
         smartModelName: false,
         models: {
-          includeRegex: ['^qwen/']
+          includeRegex: ['^bge-']
         }
       })
 
@@ -755,7 +755,7 @@ describe('ModelDiscovery Plugin', () => {
       expect(config.provider.ollama.models['bge-m3']).toBeUndefined()
     })
 
-    it('should allow provider-level model filters to further narrow global matches', async () => {
+    it('should use global model filters when provider-level filters are not configured', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
         json: async () => ({
@@ -793,12 +793,7 @@ describe('ModelDiscovery Plugin', () => {
             npm: '@ai-sdk/openai-compatible',
             name: 'Ollama',
             options: {
-              baseURL: 'http://127.0.0.1:11434/v1',
-              modelsDiscovery: {
-                models: {
-                  includeRegex: ['30b']
-                }
-              }
+              baseURL: 'http://127.0.0.1:11434/v1'
             },
             models: {}
           }
@@ -808,7 +803,7 @@ describe('ModelDiscovery Plugin', () => {
       await hooksWithConfig.config(config)
 
       expect(config.provider.ollama.models['qwen/qwen3-30b-a3b']).toBeDefined()
-      expect(config.provider.ollama.models['qwen/qwen3-8b']).toBeUndefined()
+      expect(config.provider.ollama.models['qwen/qwen3-8b']).toBeDefined()
       expect(config.provider.ollama.models['bge-m3']).toBeUndefined()
     })
   })

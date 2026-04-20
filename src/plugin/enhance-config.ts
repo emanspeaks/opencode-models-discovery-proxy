@@ -89,11 +89,8 @@ export async function enhanceConfig(
       for (const model of models) {
         const modelKey = model.id
         if (!existingModels[modelKey]) {
-          if (!shouldDiscoverModel(model.id, modelRegexFilter)) {
-            continue
-          }
-
-          if (hasProviderModelRegexFilter && !shouldDiscoverModel(model.id, providerModelRegexFilter)) {
+          const activeModelRegexFilter = hasProviderModelRegexFilter ? providerModelRegexFilter : modelRegexFilter
+          if (!shouldDiscoverModel(model.id, activeModelRegexFilter)) {
             continue
           }
 
