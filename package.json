@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "opencode-models-discovery",
-  "version": "0.7.0",
+  "name": "opencode-models-discovery-proxy",
+  "version": "0.8.0",
   "description": "OpenCode plugin for auto-discovery of OpenAI-compatible models with dynamic provider configuration",
   "type": "module",
   "main": "./src/index.ts",
@@ -19,11 +19,11 @@
     "test:watch": "vitest watch",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
-    "build": "npm run typecheck && npm run test:run",
-    "validate": "npm run lint && npm run typecheck && npm run test:run",
+    "build": "bun run typecheck && bun run test:run",
+    "validate": "bun run lint && bun run typecheck && bun run test:run",
     "validate:config": "bun scripts/validate-config.ts",
     "release": "bun scripts/release.ts",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "bun run build"
   },
   "keywords": [
     "opencode",
@@ -36,14 +36,21 @@
     "lm-studio",
     "localai"
   ],
-  "author": "",
+  "author": {
+    "name": "Randy Eckman",
+    "url": "https://github.com/emanspeaks"
+  },
   "license": "MIT",
+  "homepage": "https://github.com/emanspeaks/opencode-models-discovery-proxy#readme",
+  "bugs": {
+    "url": "https://github.com/emanspeaks/opencode-models-discovery-proxy/issues"
+  },
   "engines": {
     "opencode": ">=1.4.0"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yuhp/opencode-models-discovery.git"
+    "url": "git+https://github.com/emanspeaks/opencode-models-discovery-proxy.git"
   },
   "dependencies": {
     "@opencode-ai/plugin": "^1.0.166"

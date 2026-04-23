@@ -7,9 +7,21 @@ global.fetch = mockFetch
 if (!global.AbortSignal.timeout) {
   global.AbortSignal.timeout = vi.fn(() => {
     const controller = new AbortController()
-    setTimeout(() => controller.abort(), 3000)
+    setTimeout(() => controller.abort(), 5000)
     return controller.signal
   })
+}
+
+function makeOpenCodeResponse(models: Record<string, any>) {
+  return {
+    ok: true,
+    json: async () => ({
+      $schema: 'https://opencode.ai/config.json',
+      provider: {
+        local: { models }
+      }
+    })
+  }
 }
 
 describe('ModelDiscovery Plugin', () => {
@@ -93,7 +105,7 @@ describe('ModelDiscovery Plugin', () => {
       expect(hooks.config).toBeTypeOf('function')
       expect(hooks.event).toBeTypeOf('function')
       expect(hooks['chat.params']).toBeTypeOf('function')
-      expect(consoleSpy).toHaveBeenCalledWith('[opencode-models-discovery] Invalid client provided to plugin', { category: 'plugin' })
+      expect(consoleSpy).toHaveBeenCalledWith('[opencode-models-discovery-proxy] Invalid client provided to plugin', { category: 'plugin' })
 
       consoleSpy.mockRestore()
     })
@@ -104,7 +116,7 @@ describe('ModelDiscovery Plugin', () => {
       await pluginHooks.config(null)
       expect(mockClient.app.log).toHaveBeenLastCalledWith(expect.objectContaining({
         body: expect.objectContaining({
-          service: 'opencode-models-discovery',
+          service: 'opencode-models-discovery-proxy',
           level: 'error',
           message: 'Invalid config provided',
           extra: expect.objectContaining({
@@ -121,19 +133,10 @@ describe('ModelDiscovery Plugin', () => {
     })
 
     it('should discover models for OpenAI-compatible providers', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true
-      })
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          data: [
-            { id: 'test-model-1', object: 'model', created: 1234567890, owned_by: 'local' },
-            { id: 'test-model-2', object: 'model', created: 1234567890, owned_by: 'local' }
-          ]
-        })
-      })
+      mockFetch.mockResolvedValueOnce(makeOpenCodeResponse({
+        'test-model-1': { name: 'test-model-1', limit: { context: 200000, output: 200000 } },
+        'test-model-2': { name: 'test-model-2', limit: { context: 200000, output: 200000 } },
+      }))
 
       const config: any = {
         provider: {
@@ -152,14 +155,9 @@ describe('ModelDiscovery Plugin', () => {
     })
 
     it('should merge discovered models with existing config', async () => {
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: [
-            { id: 'new-model', object: 'model', created: 1234567890, owned_by: 'local' }
-          ]
-        })
-      })
+      mockFetch.mockResolvedValue(makeOpenCodeResponse({
+        'new-model': { name: 'new-model', limit: { context: 200000, output: 200000 } },
+      }))
 
       const config: any = {
         provider: {
@@ -178,22 +176,18 @@ describe('ModelDiscovery Plugin', () => {
 
       expect(config.provider.ollama.models).toEqual({
         'existing-model': { name: 'Existing Model' },
-        'new-model': expect.objectContaining({
-          id: 'new-model',
-          name: 'new-model'
-        })
+        'new-model': expect.objectContaining({ name: 'new-model' })
       })
     })
 
-    it('should keep raw model ids by default', async () => {
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: [
-            { id: 'qwen/qwen3-30b-a3b', object: 'model', created: 1234567890, owned_by: 'local' }
-          ]
-        })
-      })
+    it('should inject model configs as-is from the response', async () => {
+      mockFetch.mockResolvedValue(makeOpenCodeResponse({
+        'Llama-3.3-70B-Instruct-Q8_0': {
+          name: 'Llama-3.3-70B-Instruct-Q8_0',
+          tool_call: true,
+          limit: { context: 32768, output: 32768 }
+        },
+      }))
 
       const config: any = {
         provider: {
@@ -208,59 +202,11 @@ describe('ModelDiscovery Plugin', () => {
 
       await pluginHooks.config(config)
 
-      expect(config.provider.ollama.models['qwen/qwen3-30b-a3b']).toEqual(
-        expect.objectContaining({
-          id: 'qwen/qwen3-30b-a3b',
-          name: 'qwen/qwen3-30b-a3b'
-        })
-      )
-    })
-
-    it('should apply smart formatting when enabled', async () => {
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: [
-            { id: 'qwen/qwen3-30b-a3b', object: 'model', created: 1234567890, owned_by: 'local' }
-          ]
-        })
+      expect(config.provider.ollama.models['Llama-3.3-70B-Instruct-Q8_0']).toEqual({
+        name: 'Llama-3.3-70B-Instruct-Q8_0',
+        tool_call: true,
+        limit: { context: 32768, output: 32768 }
       })
-
-      const hooksWithConfig = await ModelDiscoveryPlugin({
-        client: mockClient,
-        project: {
-          id: 'test-project',
-          name: 'test',
-          path: '/tmp',
-          worktree: '',
-          time: { created: Date.now() }
-        },
-        directory: '/tmp',
-        worktree: '',
-        $: vi.fn()
-      }, {
-        smartModelName: true
-      })
-
-      const config: any = {
-        provider: {
-          ollama: {
-            npm: '@ai-sdk/openai-compatible',
-            name: 'Ollama',
-            options: { baseURL: 'http://127.0.0.1:11434/v1' },
-            models: {}
-          }
-        }
-      }
-
-      await hooksWithConfig.config(config)
-
-      expect(config.provider.ollama.models['qwen/qwen3-30b-a3b']).toEqual(
-        expect.objectContaining({
-          id: 'qwen/qwen3-30b-a3b',
-          name: 'Qwen3 30B A3B'
-        })
-      )
     })
 
     it('should handle provider offline gracefully', async () => {
@@ -302,14 +248,9 @@ describe('ModelDiscovery Plugin', () => {
     })
 
     it('should skip providers in exclude list', async () => {
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: [
-            { id: 'test-model', object: 'model', created: 1234567890, owned_by: 'local' }
-          ]
-        })
-      })
+      mockFetch.mockResolvedValue(makeOpenCodeResponse({
+        'test-model': { name: 'test-model' },
+      }))
 
       const mockInput: any = {
         client: mockClient,
@@ -342,20 +283,15 @@ describe('ModelDiscovery Plugin', () => {
         }
       }
 
-      await hooksWithConfig.config(config)
+      await hooksWithConfig.config!(config)
 
       // Filter check happens silently
     })
 
     it('should only discover providers in include list', async () => {
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: [
-            { id: 'test-model', object: 'model', created: 1234567890, owned_by: 'local' }
-          ]
-        })
-      })
+      mockFetch.mockResolvedValue(makeOpenCodeResponse({
+        'test-model': { name: 'test-model' },
+      }))
 
       const mockInput: any = {
         client: mockClient,
@@ -394,21 +330,16 @@ describe('ModelDiscovery Plugin', () => {
         }
       }
 
-      await hooksWithConfig.config(config)
+      await hooksWithConfig.config!(config)
 
       expect(config.provider?.lmstudio?.models?.['test-model']).toBeDefined()
       expect(config.provider?.ollama?.models).toEqual({})
     })
 
     it('should skip discovery when discovery.enabled is false', async () => {
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: [
-            { id: 'test-model', object: 'model', created: 1234567890, owned_by: 'local' }
-          ]
-        })
-      })
+      mockFetch.mockResolvedValue(makeOpenCodeResponse({
+        'test-model': { name: 'test-model' },
+      }))
 
       const mockInput: any = {
         client: mockClient,
@@ -441,20 +372,15 @@ describe('ModelDiscovery Plugin', () => {
         }
       }
 
-      await hooksWithConfig.config(config)
+      await hooksWithConfig.config!(config)
 
       expect(config.provider?.ollama?.models).toEqual({})
     })
 
     it('should allow provider-level discovery when global discovery is disabled', async () => {
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: [
-            { id: 'test-model', object: 'model', created: 1234567890, owned_by: 'local' }
-          ]
-        })
-      })
+      mockFetch.mockResolvedValue(makeOpenCodeResponse({
+        'test-model': { name: 'test-model' },
+      }))
 
       const mockInput: any = {
         client: mockClient,
@@ -492,20 +418,15 @@ describe('ModelDiscovery Plugin', () => {
         }
       }
 
-      await hooksWithConfig.config(config)
+      await hooksWithConfig.config!(config)
 
       expect(config.provider?.ollama?.models?.['test-model']).toBeDefined()
     })
 
     it('should skip provider when provider-level discovery is disabled', async () => {
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: [
-            { id: 'test-model', object: 'model', created: 1234567890, owned_by: 'local' }
-          ]
-        })
-      })
+      mockFetch.mockResolvedValue(makeOpenCodeResponse({
+        'test-model': { name: 'test-model' },
+      }))
 
       const mockInput: any = {
         client: mockClient,
@@ -543,21 +464,16 @@ describe('ModelDiscovery Plugin', () => {
         }
       }
 
-      await hooksWithConfig.config(config)
+      await hooksWithConfig.config!(config)
 
       expect(config.provider?.ollama?.models).toEqual({})
     })
 
     it('should only discover models matching includeRegex', async () => {
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: [
-            { id: 'qwen/qwen3-30b-a3b', object: 'model', created: 1234567890, owned_by: 'local' },
-            { id: 'bge-m3', object: 'model', created: 1234567890, owned_by: 'local' }
-          ]
-        })
-      })
+      mockFetch.mockResolvedValue(makeOpenCodeResponse({
+        'qwen/qwen3-30b-a3b': { name: 'qwen/qwen3-30b-a3b', limit: { context: 200000, output: 200000 } },
+        'bge-m3': { name: 'bge-m3', limit: { context: 8192, output: 8192 } },
+      }))
 
       const mockInput: any = {
         client: mockClient,
@@ -590,22 +506,17 @@ describe('ModelDiscovery Plugin', () => {
         }
       }
 
-      await hooksWithConfig.config(config)
+      await hooksWithConfig.config!(config)
 
       expect(config.provider.ollama.models['qwen/qwen3-30b-a3b']).toBeDefined()
       expect(config.provider.ollama.models['bge-m3']).toBeUndefined()
     })
 
     it('should skip models matching excludeRegex', async () => {
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: [
-            { id: 'qwen/qwen3-30b-a3b', object: 'model', created: 1234567890, owned_by: 'local' },
-            { id: 'bge-m3', object: 'model', created: 1234567890, owned_by: 'local' }
-          ]
-        })
-      })
+      mockFetch.mockResolvedValue(makeOpenCodeResponse({
+        'qwen/qwen3-30b-a3b': { name: 'qwen/qwen3-30b-a3b', limit: { context: 200000, output: 200000 } },
+        'bge-m3': { name: 'bge-m3', limit: { context: 8192, output: 8192 } },
+      }))
 
       const mockInput: any = {
         client: mockClient,
@@ -638,22 +549,17 @@ describe('ModelDiscovery Plugin', () => {
         }
       }
 
-      await hooksWithConfig.config(config)
+      await hooksWithConfig.config!(config)
 
       expect(config.provider.ollama.models['qwen/qwen3-30b-a3b']).toBeDefined()
       expect(config.provider.ollama.models['bge-m3']).toBeUndefined()
     })
 
     it('should preserve explicitly configured models even when regex would filter them out', async () => {
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: [
-            { id: 'keep-me', object: 'model', created: 1234567890, owned_by: 'local' },
-            { id: 'discover-me', object: 'model', created: 1234567890, owned_by: 'local' }
-          ]
-        })
-      })
+      mockFetch.mockResolvedValue(makeOpenCodeResponse({
+        'keep-me': { name: 'keep-me' },
+        'discover-me': { name: 'discover-me' },
+      }))
 
       const mockInput: any = {
         client: mockClient,
@@ -688,22 +594,17 @@ describe('ModelDiscovery Plugin', () => {
         }
       }
 
-      await hooksWithConfig.config(config)
+      await hooksWithConfig.config!(config)
 
       expect(config.provider.ollama.models['keep-me']).toEqual({ name: 'Keep Me' })
       expect(config.provider.ollama.models['discover-me']).toBeDefined()
     })
 
     it('should prefer provider-level model filters over global filters', async () => {
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: [
-            { id: 'qwen/qwen3-30b-a3b', object: 'model', created: 1234567890, owned_by: 'local' },
-            { id: 'bge-m3', object: 'model', created: 1234567890, owned_by: 'local' }
-          ]
-        })
-      })
+      mockFetch.mockResolvedValue(makeOpenCodeResponse({
+        'qwen/qwen3-30b-a3b': { name: 'qwen/qwen3-30b-a3b', tool_call: true, limit: { context: 200000, output: 200000 } },
+        'bge-m3': { name: 'bge-m3', limit: { context: 8192, output: 8192 } },
+      }))
 
       const mockInput: any = {
         client: mockClient,
@@ -720,7 +621,6 @@ describe('ModelDiscovery Plugin', () => {
       }
 
       const hooksWithConfig = await ModelDiscoveryPlugin(mockInput, {
-        smartModelName: false,
         models: {
           includeRegex: ['^bge-']
         }
@@ -734,7 +634,6 @@ describe('ModelDiscovery Plugin', () => {
             options: {
               baseURL: 'http://127.0.0.1:11434/v1',
               modelsDiscovery: {
-                smartModelName: true,
                 models: {
                   includeRegex: ['^qwen/']
                 }
@@ -745,27 +644,23 @@ describe('ModelDiscovery Plugin', () => {
         }
       }
 
-      await hooksWithConfig.config(config)
+      await hooksWithConfig.config!(config)
 
       expect(config.provider.ollama.models['qwen/qwen3-30b-a3b']).toEqual(
         expect.objectContaining({
-          name: 'Qwen3 30B A3B'
+          name: 'qwen/qwen3-30b-a3b',
+          tool_call: true,
         })
       )
       expect(config.provider.ollama.models['bge-m3']).toBeUndefined()
     })
 
     it('should use global model filters when provider-level filters are not configured', async () => {
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: [
-            { id: 'qwen/qwen3-30b-a3b', object: 'model', created: 1234567890, owned_by: 'local' },
-            { id: 'qwen/qwen3-8b', object: 'model', created: 1234567890, owned_by: 'local' },
-            { id: 'bge-m3', object: 'model', created: 1234567890, owned_by: 'local' }
-          ]
-        })
-      })
+      mockFetch.mockResolvedValue(makeOpenCodeResponse({
+        'qwen/qwen3-30b-a3b': { name: 'qwen/qwen3-30b-a3b', limit: { context: 200000, output: 200000 } },
+        'qwen/qwen3-8b': { name: 'qwen/qwen3-8b', limit: { context: 200000, output: 200000 } },
+        'bge-m3': { name: 'bge-m3', limit: { context: 8192, output: 8192 } },
+      }))
 
       const mockInput: any = {
         client: mockClient,
@@ -800,7 +695,7 @@ describe('ModelDiscovery Plugin', () => {
         }
       }
 
-      await hooksWithConfig.config(config)
+      await hooksWithConfig.config!(config)
 
       expect(config.provider.ollama.models['qwen/qwen3-30b-a3b']).toBeDefined()
       expect(config.provider.ollama.models['qwen/qwen3-8b']).toBeDefined()
@@ -813,7 +708,7 @@ describe('ModelDiscovery Plugin', () => {
       await pluginHooks.event({ event: null })
       expect(mockClient.app.log).toHaveBeenLastCalledWith(expect.objectContaining({
         body: expect.objectContaining({
-          service: 'opencode-models-discovery',
+          service: 'opencode-models-discovery-proxy',
           level: 'error',
           message: 'Invalid event input',
           extra: expect.objectContaining({
@@ -872,14 +767,9 @@ describe('ModelDiscovery Plugin', () => {
 
   describe('Multi-Provider Support', () => {
     it('should discover models for multiple OpenAI-compatible providers', async () => {
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: [
-            { id: 'ollama-model-1', object: 'model', created: 1234567890, owned_by: 'local' }
-          ]
-        })
-      })
+      mockFetch.mockResolvedValue(makeOpenCodeResponse({
+        'ollama-model-1': { name: 'ollama-model-1', limit: { context: 200000, output: 200000 } },
+      }))
 
       const config: any = {
         provider: {
@@ -904,14 +794,9 @@ describe('ModelDiscovery Plugin', () => {
     })
 
     it('should discover models for providers with Anthropic npm but OpenAI-compatible URL', async () => {
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: [
-            { id: 'anthropic-compatible-model', object: 'model', created: 1234567890, owned_by: 'local' }
-          ]
-        })
-      })
+      mockFetch.mockResolvedValue(makeOpenCodeResponse({
+        'anthropic-compatible-model': { name: 'anthropic-compatible-model', limit: { context: 200000, output: 200000 } },
+      }))
 
       const config: any = {
         provider: {

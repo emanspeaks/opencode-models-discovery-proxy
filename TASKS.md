@@ -3,6 +3,7 @@
 ## Vision
 
 Transform this plugin into a **universal OpenAI-compatible model discovery system** that:
+
 - Scans ALL providers with OpenAI-compatible endpoints (regardless of npm package)
 - Automatically discovers available models via `/v1/models` endpoint
 - Injects unconfigured models into provider configurations
@@ -18,6 +19,7 @@ Transform this plugin into a **universal OpenAI-compatible model discovery syste
 ### Phase 1: Provider Detection & Classification
 
 #### Task 1.1: OpenAI-Compatible Provider Detection
+
 - **Goal**: Identify all OpenAI-compatible providers in config
 - **Detection Logic**:
   1. Strict: `npm === "@ai-sdk/openai-compatible"`
@@ -35,6 +37,7 @@ Transform this plugin into a **universal OpenAI-compatible model discovery syste
   - Supports `@ai-sdk/anthropic` with OpenAI-compatible URLs
 
 #### Task 1.2: Provider Health Monitoring
+
 - **Goal**: Verify provider accessibility before model discovery
 - **Changes**:
   - Add health check for each provider's `/v1/models` endpoint
@@ -51,6 +54,7 @@ Transform this plugin into a **universal OpenAI-compatible model discovery syste
 ### Phase 2: Model Discovery Engine
 
 #### Task 2.1: Multi-Provider Model Fetching
+
 - **Goal**: Query models from all accessible providers
 - **Changes**:
   - Iterate through all OpenAI-compatible providers
@@ -63,6 +67,7 @@ Transform this plugin into a **universal OpenAI-compatible model discovery syste
   - Reports discovery summary
 
 #### Task 2.2: Smart Model Injection
+
 - **Goal**: Add discovered models to provider configs without overwriting explicit config
 - **Changes**:
   - Preserve explicitly configured models
@@ -75,6 +80,7 @@ Transform this plugin into a **universal OpenAI-compatible model discovery syste
   - Handles special characters in model IDs
 
 #### Task 2.3: Model Categorization
+
 - **Goal**: Classify discovered models by type
 - **Changes**:
   - Detect chat vs embedding models by ID patterns
@@ -91,6 +97,7 @@ Transform this plugin into a **universal OpenAI-compatible model discovery syste
 ### Phase 3: Error Recovery & User Guidance
 
 #### Task 3.1: Comprehensive Error Categorization
+
 - **Goal**: Provide actionable error messages for common issues
 - **Changes**:
   - Categorize errors: offline, timeout, not_found, permission, network
@@ -101,6 +108,7 @@ Transform this plugin into a **universal OpenAI-compatible model discovery syste
   - Users receive actionable fix suggestions
 
 #### Task 3.2: Retry Logic & Resilience
+
 - **Goal**: Handle transient failures gracefully
 - **Changes**:
   - Implement exponential backoff retry
@@ -111,6 +119,7 @@ Transform this plugin into a **universal OpenAI-compatible model discovery syste
   - Doesn't block startup on failures
 
 #### Task 3.3: Toast Notifications
+
 - **Goal**: Provide non-intrusive status updates
 - **Changes**:
   - Success/failure toasts for model discovery
@@ -127,6 +136,7 @@ Transform this plugin into a **universal OpenAI-compatible model discovery syste
 ### Phase 4: Intelligent Caching
 
 #### Task 4.1: Model Status Cache
+
 - **Goal**: Reduce API calls with intelligent caching
 - **Changes**:
   - Implement TTL-based cache (15s default)
@@ -139,6 +149,7 @@ Transform this plugin into a **universal OpenAI-compatible model discovery syste
   - Handles stale data gracefully
 
 #### Task 4.2: Cache Statistics & Debugging
+
 - **Goal**: Provide visibility into cache behavior
 - **Changes**:
   - Expose cache stats (size, entries, age)
@@ -155,6 +166,7 @@ Transform this plugin into a **universal OpenAI-compatible model discovery syste
 ### Phase 6: Session & Provider Events
 
 #### Task 6.1: Event Hook Enhancement
+
 - **Goal**: Monitor session events for provider status
 - **Changes**:
   - Track session.created/updated events
@@ -171,6 +183,7 @@ Transform this plugin into a **universal OpenAI-compatible model discovery syste
 ### Phase 7: Plugin Configuration
 
 #### Task 7.1: Plugin Config Schema
+
 - **Goal**: Define configuration schema for plugin
 - **Changes**:
   - Define `PluginConfig` interface with providers and discovery sections
@@ -181,6 +194,7 @@ Transform this plugin into a **universal OpenAI-compatible model discovery syste
   - Supports OpenCode's tuple format
 
 #### Task 7.2: Provider Filtering
+
 - **Goal**: Allow filtering which providers to discover models for
 - **Changes**:
   - Implement `providers.include` (whitelist)
@@ -193,6 +207,7 @@ Transform this plugin into a **universal OpenAI-compatible model discovery syste
   - Logs which providers were filtered
 
 #### Task 7.3: Discovery Configuration
+
 - **Goal**: Allow configuring discovery behavior
 - **Changes**:
   - `discovery.enabled` - toggle discovery on/off
@@ -202,6 +217,7 @@ Transform this plugin into a **universal OpenAI-compatible model discovery syste
   - Cache TTL is configurable
 
 #### Task 7.4: Plugin Configuration via OpenCode Options
+
 - **Goal**: Receive plugin config from OpenCode
 - **Status**: CONFIRMED WORKING
 - **Finding**: OpenCode passes plugin configuration via the `options` parameter (second argument to Plugin function)
@@ -218,12 +234,15 @@ Transform this plugin into a **universal OpenAI-compatible model discovery syste
 ## Implementation Notes
 
 ### Provider Detection Logic
+
 ```typescript
 // Provider is OpenAI-compatible if:
 provider.npm === "@ai-sdk/openai-compatible"
+
 ```
 
 ### Supported Providers
+
 - LM Studio (default port: 1234)
 - Ollama (port: 11434)
 - LocalAI (port: 8080)
@@ -232,6 +251,7 @@ provider.npm === "@ai-sdk/openai-compatible"
   - Including `@ai-sdk/anthropic` with OpenAI-compatible backends (e.g., Ollama Anthropic mode)
 
 ### Model Discovery Flow
+
 1. Iterate all providers in config
 2. Filter using `canDiscoverModels()` (strict npm OR URL-based)
 3. Check health via `/v1/models`
@@ -240,6 +260,7 @@ provider.npm === "@ai-sdk/openai-compatible"
 6. Warm cache
 
 ### Testing Strategy
+
 - Unit tests for provider detection
 - Integration tests for discovery flow
 - Mock tests for error scenarios

@@ -76,12 +76,14 @@ npm publish
 ### npm publish fails with 2FA error
 
 **Solution**: Create an npm token and configure it:
+
 ```bash
 npm token create --read-only=false
 npm config set //registry.npmjs.org/:_authToken YOUR_TOKEN
 ```
 
 Or use environment variable:
+
 ```bash
 export NPM_TOKEN=your_token_here
 npm run release patch
@@ -90,6 +92,7 @@ npm run release patch
 ### GitHub release creation fails
 
 **Solution**: Ensure GitHub CLI is authenticated:
+
 ```bash
 gh auth login
 ```
@@ -97,6 +100,7 @@ gh auth login
 ### Version already exists
 
 **Solution**: The script will detect this and skip npm publish. Just bump to the next version:
+
 ```bash
 npm run release patch  # Will create 0.1.2 if 0.1.1 exists
 ```
@@ -112,10 +116,10 @@ The GitHub Actions workflow (`.github/workflows/release.yml`) allows you to crea
 5. Click "Run workflow" button
 
 The workflow will:
+
 - Run all tests
 - Create git tag
 - Create GitHub release
 - Publish to npm
 
 All automatically! 🚀
-

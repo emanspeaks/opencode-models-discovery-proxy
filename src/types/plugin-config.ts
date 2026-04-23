@@ -10,7 +10,6 @@ export interface PluginConfig {
   discovery?: {
     enabled?: boolean
   }
-  smartModelName?: boolean
 }
 
 export interface ProviderDiscoveryConfig {
@@ -19,7 +18,6 @@ export interface ProviderDiscoveryConfig {
     includeRegex?: string[]
     excludeRegex?: string[]
   }
-  smartModelName?: boolean
 }
 
 export interface ProviderFilter {
@@ -91,7 +89,7 @@ function toRegExp(pattern: string, logger?: PluginLogger): RegExp | null {
     if (logger) {
       logger.warn('Ignoring invalid model regex', { category: 'filtering', pattern })
     } else {
-      console.warn(`[opencode-models-discovery] Ignoring invalid model regex: ${pattern}`)
+      console.warn(`[opencode-models-discovery-proxy] Ignoring invalid model regex: ${pattern}`)
     }
     return null
   }

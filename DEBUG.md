@@ -1,4 +1,4 @@
-# Debugging opencode-models-discovery in OpenCode TUI
+# Debugging opencode-models-discovery-proxy in OpenCode TUI
 
 ## How to Debug
 
@@ -6,7 +6,7 @@ When you run OpenCode in TUI mode, check the console output for these log messag
 
 ### Expected Log Sequence
 
-1. `[opencode-models-discovery] Model discovery plugin initialized` - Plugin loaded
+1. `[opencode-models-discovery-proxy] Model discovery plugin initialized` - Plugin loaded
 2. A config hook log indicating discovery/config processing started - Config hook invoked
 3. Provider creation or provider check logs - Provider instantiated successfully
 4. Discovery logs for `/v1/models` requests - Model discovery started
@@ -17,7 +17,7 @@ When you run OpenCode in TUI mode, check the console output for these log messag
 ### What to Check
 
 1. **Is the plugin loaded?**
-   - Look for: `[opencode-models-discovery] Model discovery plugin initialized`
+   - Look for: `[opencode-models-discovery-proxy] Model discovery plugin initialized`
    - If missing: Plugin not installed or not in config
 
 2. **Is the config hook being called?**
@@ -41,12 +41,14 @@ When you run OpenCode in TUI mode, check the console output for these log messag
 #### Issue: Models not showing in OpenCode
 
 **Possible causes:**
+
 1. Config hook not being awaited by OpenCode
 2. Config object is frozen/read-only
 3. OpenCode reads config before hook completes
 4. Config object is cloned before hook runs
 
 **Debug steps:**
+
 1. Check console logs for the sequence above
 2. Look for warnings about frozen config
 3. Check if `modelCount` is 0 in final log
@@ -55,13 +57,15 @@ When you run OpenCode in TUI mode, check the console output for these log messag
 #### Issue: Plugin not loading
 
 **Check:**
-1. Plugin is in `opencode.json`: `"plugin": ["opencode-models-discovery"]`
-2. Plugin is installed: `npm list opencode-models-discovery`
+
+1. Plugin is in `opencode.json`: `"plugin": ["opencode-models-discovery-proxy"]`
+2. Plugin is installed: `npm list opencode-models-discovery-proxy`
 3. No errors in OpenCode startup logs
 
 #### Issue: Provider not detected
 
 **Check:**
+
 1. Your provider service is running
 2. Its OpenAI-compatible API endpoint is active
 3. The configured port is correct

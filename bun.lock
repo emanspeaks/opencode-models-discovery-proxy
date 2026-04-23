@@ -5,16 +5,16 @@
     "": {
       "name": "opencode-model-discovery",
       "dependencies": {
-        "@opencode-ai/plugin": "^1.0.166",
+        "@opencode-ai/plugin": "^1.0.166"
       },
       "devDependencies": {
         "@types/node": "^25.0.3",
         "@vitest/coverage-v8": "^4.0.16",
         "eslint": "^9.39.2",
         "typescript": "^5.9.3",
-        "vitest": "^4.0.16",
-      },
-    },
+        "vitest": "^4.0.16"
+      }
+    }
   },
   "packages": {
     "@babel/helper-string-parser": ["@babel/helper-string-parser@7.27.1", "", {}, "sha512-qMlSxKbpRlAridDExk92nSobyDdpPijUq2DW6oDnUqd0iOGxmQjyqhMIihI9+zv4LPyZdRje2cavWPbCbWm3eA=="],
@@ -379,6 +379,6 @@
 
     "zod": ["zod@4.1.8", "", {}, "sha512-5R1P+WwQqmmMIEACyzSvo4JXHY5WiAFHRMg+zBZKgKS+Q1viRa0C1hmUKtHltoIFKtIdki3pRxkmpP74jnNYHQ=="],
 
-    "@eslint-community/eslint-utils/eslint-visitor-keys": ["eslint-visitor-keys@3.4.3", "", {}, "sha512-wpc+LXeiyiisxPlEkUzU6svyS1frIO3Mgxj1fdy7Pm8Ygzguax2N3Fa/D/ag1WqbOprdI+uY6wMUl8/a2G+iag=="],
+    "@eslint-community/eslint-utils/eslint-visitor-keys": ["eslint-visitor-keys@3.4.3", "", {}, "sha512-wpc+LXeiyiisxPlEkUzU6svyS1frIO3Mgxj1fdy7Pm8Ygzguax2N3Fa/D/ag1WqbOprdI+uY6wMUl8/a2G+iag=="]
   }
 }
