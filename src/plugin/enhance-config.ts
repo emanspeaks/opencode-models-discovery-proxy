@@ -53,18 +53,21 @@ export async function enhanceConfig(
       const hasProviderModelRegexFilter = !!providerDiscoveryConfig.models?.includeRegex?.length || !!providerDiscoveryConfig.models?.excludeRegex?.length
       const providerModelRegexFilter = getProviderModelRegexFilter(providerDiscoveryConfig, logger.child({ category: 'filtering' }))
 
-      for (const remoteProvider of Object.values(opencodeConfig.provider as Record<string, any>)) {
-        const remoteModels: Record<string, any> = remoteProvider?.models || {}
-        for (const [modelKey, modelConfig] of Object.entries(remoteModels)) {
-          if (existingModels[modelKey]) {
-            continue
-          }
-          const activeModelRegexFilter = hasProviderModelRegexFilter ? providerModelRegexFilter : modelRegexFilter
-          if (!shouldDiscoverModel(modelKey, activeModelRegexFilter)) {
-            continue
-          }
-          discoveredModels[modelKey] = modelConfig
+      const remoteProvider = (opencodeConfig.provider as Record<string, any>)[providerName]
+      if (!remoteProvider) {
+        logger.debug(`Provider ${providerName} not found in remote /v1/opencode response — skipping`)
+        continue
+      }
+      const remoteModels: Record<string, any> = remoteProvider?.models || {}
+      for (const [modelKey, modelConfig] of Object.entries(remoteModels)) {
+        if (existingModels[modelKey]) {
+          continue
         }
+        const activeModelRegexFilter = hasProviderModelRegexFilter ? providerModelRegexFilter : modelRegexFilter
+        if (!shouldDiscoverModel(modelKey, activeModelRegexFilter)) {
+          continue
+        }
+        discoveredModels[modelKey] = modelConfig
       }
 
       if (Object.keys(discoveredModels).length > 0) {
