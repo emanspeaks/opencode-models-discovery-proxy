@@ -1,125 +1,59 @@
 # Release Process
 
-This project uses an automated release system that handles versioning, testing, git tagging, GitHub releases, and npm publishing.
+Releases are triggered automatically when a PR is merged to `main`, provided the version in `package.json` has been bumped. The workflow will fail and block the merge if the version matches the latest git tag.
 
-## Quick Start
+## How to Release
 
-```bash
-npm run release patch   # 0.1.0 -> 0.1.1 (bug fixes)
-npm run release minor   # 0.1.0 -> 0.2.0 (new features)
-npm run release major   # 0.1.0 -> 1.0.0 (breaking changes)
-npm run release 0.2.0   # Set specific version
-```
+1. In your PR branch, bump the version in `package.json` manually (e.g. `0.8.5` → `0.8.6`)
+2. Merge the PR to `main`
+3. The release workflow fires automatically and:
+   - Verifies the version is new (fails if the tag already exists)
+   - Runs type checking and tests
+   - Creates and pushes a git tag (`v0.8.6`)
+   - Creates a GitHub release with generated notes
+   - Publishes to npm
 
-## What the Release Script Does
+## Version Conventions
 
-1. **Bumps version** in `package.json`
-2. **Runs build and tests** to ensure everything works
-3. **Creates git tag** (e.g., `v0.1.1`)
-4. **Pushes to GitHub** (commits and tags)
-5. **Creates GitHub release** with auto-generated release notes
-6. **Publishes to npm** (if authentication is configured)
+- **patch** (`0.1.0 → 0.1.1`): Bug fixes, small improvements
+- **minor** (`0.1.0 → 0.2.0`): New features, backwards compatible
+- **major** (`0.1.0 → 1.0.0`): Breaking changes
 
 ## Prerequisites
 
-### Local Releases
+<!-- ### Repository Secret
 
-1. **npm authentication** (one of these):
-   - `npm login` (with 2FA OTP)
-   - `npm token create --read-only=false` then `npm config set //registry.npmjs.org/:_authToken YOUR_TOKEN`
-   - Set `NPM_TOKEN` environment variable
+Add `NPM_TOKEN` to your GitHub repository secrets (Settings → Secrets and variables → Actions). Generate one at npmjs.com → Access Tokens → Classic Token with `Automation` type. -->
 
-2. **GitHub CLI** (`gh`) authenticated:
-   - `gh auth login`
+### Branch Protection (recommended)
 
-### CI/CD Releases (GitHub Actions)
+In your repo's branch protection settings for `main`, add `Release / release` as a required status check. This prevents merging a PR where the version was not bumped.
 
-1. Add `NPM_TOKEN` secret to your GitHub repository:
-   - Go to: Settings → Secrets and variables → Actions
-   - Add secret: `NPM_TOKEN` = (your npm token)
+## Manual Release (if needed)
 
-2. Run the workflow:
-   - Go to: Actions → Release → Run workflow
-   - Select version type (patch/minor/major)
-   - Click "Run workflow"
-
-## Version Types
-
-- **patch**: Bug fixes, small improvements (0.1.0 → 0.1.1)
-- **minor**: New features, backwards compatible (0.1.0 → 0.2.0)
-- **major**: Breaking changes (0.1.0 → 1.0.0)
-
-## Manual Steps (if needed)
-
-If the automated script fails at any step, you can complete it manually:
+If you need to release outside of CI:
 
 ```bash
-# 1. Bump version
-npm version patch  # or minor, major
+# Ensure you are on main with a clean working tree
+git checkout main && git pull
 
-# 2. Run tests
-npm run build
-
-# 3. Create and push tag
-git tag v0.1.1
-git push origin v0.1.1
-
-# 4. Create GitHub release
-gh release create v0.1.1 --title "v0.1.1" --notes "Release notes"
-
-# 5. Publish to npm
-npm publish
+# Tag, create GitHub release, and publish to npm
+bun scripts/release.ts
 ```
+
+Requires `gh` CLI authenticated (`gh auth login`) and npm credentials configured (`npm login` or `NPM_TOKEN` env var set).
 
 ## Troubleshooting
 
-### npm publish fails with 2FA error
+### Workflow fails: "already tagged"
 
-**Solution**: Create an npm token and configure it:
+The version in `package.json` was not bumped before merging. Push a follow-up commit to `main` with an incremented version — the workflow will re-trigger.
 
-```bash
-npm token create --read-only=false
-npm config set //registry.npmjs.org/:_authToken YOUR_TOKEN
-```
+### npm publish fails with auth error
 
-Or use environment variable:
-
-```bash
-export NPM_TOKEN=your_token_here
-npm run release patch
-```
+<!-- Verify the `NPM_TOKEN` secret is set in the repository and has publishing permissions. Generate a new token at npmjs.com if needed. -->
+Ensure the GitHub Actions workflow is configured as a trusted publisher for the npm package
 
 ### GitHub release creation fails
 
-**Solution**: Ensure GitHub CLI is authenticated:
-
-```bash
-gh auth login
-```
-
-### Version already exists
-
-**Solution**: The script will detect this and skip npm publish. Just bump to the next version:
-
-```bash
-npm run release patch  # Will create 0.1.2 if 0.1.1 exists
-```
-
-## CI/CD Integration
-
-The GitHub Actions workflow (`.github/workflows/release.yml`) allows you to create releases from the GitHub UI:
-
-1. Go to Actions tab
-2. Select "Release" workflow
-3. Click "Run workflow"
-4. Choose version type
-5. Click "Run workflow" button
-
-The workflow will:
-
-- Run all tests
-- Create git tag
-- Create GitHub release
-- Publish to npm
-
-All automatically! 🚀
+Ensure the workflow has `contents: write` permission (already set) and that `GITHUB_TOKEN` is available (it is by default in Actions).

@@ -8,6 +8,8 @@
 
 An [OpenCode](https://opencode.ai) plugin that bridges **[llama-swap-proxy](https://github.com/emanspeaks/llama-swap-proxy)** and OpenCode by automatically injecting your available models and their capabilities into the OpenCode provider configuration at startup.
 
+A fork of [opencode-models-discovery](https://github.com/yuhp/opencode-models-discovery)
+
 ## Who is this for?
 
 If you are running [llama-swap-proxy](https://github.com/emanspeaks/llama-swap-proxy), it exposes a `/v1/opencode` endpoint that returns a fully-formed OpenCode provider config describing every model it serves — including context limits, tool-calling support, reasoning mode, vision capabilities, and multimodal modalities. This plugin reads that endpoint and injects those model definitions directly into OpenCode without any transformation, so you never have to manually keep your OpenCode config in sync with your model lineup.
