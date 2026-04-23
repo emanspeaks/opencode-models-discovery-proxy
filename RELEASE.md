@@ -27,7 +27,12 @@ Add `NPM_TOKEN` to your GitHub repository secrets (Settings → Secrets and vari
 
 ### Branch Protection (recommended)
 
-In your repo's branch protection settings for `main`, add `Release / release` as a required status check. This prevents merging a PR where the version was not bumped.
+In your repo's branch protection settings for `main`, add the following as required status checks:
+
+- `Version must be bumped` — blocks merge if `package.json` version was not changed vs main
+- `Build and test` — blocks merge if type checking or tests fail
+
+These are defined in `.github/workflows/ci.yml` and run automatically on every PR to main.
 
 ## Manual Release (if needed)
 

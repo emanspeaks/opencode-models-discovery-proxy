@@ -33,15 +33,14 @@ jobs:
       - name: Upgrade npm
         run: npm install -g npm@latest
 
-      - name: Check version bumped
+      - name: Check version not already tagged
         run: |
           VERSION=$(node -p "require('./package.json').version")
           LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "none")
           echo "Package version : $VERSION"
           echo "Latest git tag  : $LATEST_TAG"
           if [ "$LATEST_TAG" = "v$VERSION" ]; then
-            echo ""
-            echo "❌ v$VERSION is already tagged. Bump the version in package.json before merging to main."
+            echo "::error::v$VERSION is already tagged — was this pushed directly to main without a PR?"
             exit 1
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
