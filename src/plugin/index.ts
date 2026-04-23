@@ -1,10 +1,10 @@
 import type { Plugin, PluginInput, PluginOptions } from "@opencode-ai/plugin"
 import { ToastNotifier } from '../ui/toast-notifier'
-import { createConfigHook } from './config-hook'
+import { createProviderHook } from './provider-hook'
 import { createEventHook } from './event-hook'
 import { createChatParamsHook } from './chat-params-hook'
 import { createPluginLogger } from './logger'
-import { parsePluginConfig, type PluginConfig } from '../types/plugin-config'
+import { parsePluginConfig } from '../types/plugin-config'
 
 export const ModelDiscoveryPlugin: Plugin = async (input: PluginInput, options?: PluginOptions) => {
   const { client } = input
@@ -13,7 +13,6 @@ export const ModelDiscoveryPlugin: Plugin = async (input: PluginInput, options?:
   if (!client || typeof client !== 'object') {
     logger.error('Invalid client provided to plugin')
     return {
-      config: async () => { },
       event: async () => { },
       "chat.params": async () => { }
     }
@@ -21,17 +20,23 @@ export const ModelDiscoveryPlugin: Plugin = async (input: PluginInput, options?:
 
   logger.info('Model discovery plugin initialized')
 
-  const pluginConfig: PluginConfig = parsePluginConfig(options || {})
-
-  if (pluginConfig.discovery?.enabled === false) {
-    logger.info('Discovery disabled by configuration', { category: 'config' })
-  }
-
+  const pluginConfig = parsePluginConfig(options || {})
   const toastNotifier = new ToastNotifier(client)
 
-  return {
-    config: createConfigHook(client, toastNotifier, pluginConfig, logger.child({ category: 'config' })),
+  const hooks: any = {
     event: createEventHook(logger.child({ category: 'event' })),
     "chat.params": createChatParamsHook(),
   }
+
+  if (pluginConfig.provider) {
+    hooks.provider = createProviderHook(
+      pluginConfig,
+      toastNotifier,
+      logger.child({ category: 'provider' })
+    )
+  } else {
+    logger.warn('No provider configured — set "provider" in plugin options to enable model discovery')
+  }
+
+  return hooks
 }

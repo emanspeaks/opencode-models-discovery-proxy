@@ -6,20 +6,23 @@
 [![license](https://img.shields.io/github/license/emanspeaks/opencode-models-discovery-proxy)](https://github.com/emanspeaks/opencode-models-discovery-proxy/blob/main/LICENSE)
 [![OpenCode](https://img.shields.io/badge/OpenCode-%3E%3D1.4.0-blueviolet)](https://opencode.ai)
 
-An [OpenCode](https://opencode.ai) plugin that bridges **[llama-swap-proxy](https://github.com/emanspeaks/llama-swap-proxy)** and OpenCode by automatically injecting your available models and their capabilities into the OpenCode provider configuration at startup.
+An [OpenCode](https://opencode.ai) plugin that bridges **[llama-swap-proxy](https://github.com/emanspeaks/llama-swap-proxy)** and OpenCode by automatically populating your provider's model list from the `/v1/opencode` endpoint at startup.
 
 A fork of [opencode-models-discovery](https://github.com/yuhp/opencode-models-discovery)
 
 ## Who is this for?
 
-If you are running [llama-swap-proxy](https://github.com/emanspeaks/llama-swap-proxy), it exposes a `/v1/opencode` endpoint that returns a fully-formed OpenCode provider config describing every model it serves — including context limits, tool-calling support, reasoning mode, vision capabilities, and multimodal modalities. This plugin reads that endpoint and injects those model definitions directly into OpenCode without any transformation, so you never have to manually keep your OpenCode config in sync with your model lineup.
+If you are running [llama-swap-proxy](https://github.com/emanspeaks/llama-swap-proxy), it exposes a `/v1/opencode` endpoint that returns a fully-formed OpenCode provider config describing every model it serves — including context limits, tool-calling support, reasoning mode, vision capabilities, and multimodal modalities. This plugin reads that endpoint and injects those model definitions directly into OpenCode without any manual configuration, so you never have to keep your OpenCode config in sync with your model lineup.
 
 ## How it works
 
-1. OpenCode calls the plugin's `config` hook at startup
-2. For each configured provider with an OpenAI-compatible `baseURL`, the plugin fetches `<baseURL>/v1/opencode`
-3. Every model returned is merged into that provider's `models` config as-is — capabilities, limits, and modalities are passed through exactly as the server reports them
-4. OpenCode sees a fully-populated model list for the session
+1. OpenCode calls the plugin's `provider` hook at startup for the configured provider
+2. The hook fetches `<baseURL>/v1/opencode` from that provider's configured endpoint
+3. It looks up the entry in the response whose name **exactly matches** the configured provider name
+4. Every model from that entry is returned as a fully-typed `ModelV2` object — capabilities, limits, and modalities are mapped from the server's response
+5. OpenCode merges the returned models into the provider's model list for the session
+
+The exact-name match means two providers sharing the same base URL but with different names will never bleed models into each other.
 
 ## Installation
 
@@ -31,13 +34,15 @@ bun add opencode-models-discovery-proxy
 
 ## Usage
 
-Add the plugin and your llama-swap-proxy provider to `opencode.json`:
+Add the plugin with the `provider` option set to the **exact name of your provider** in `opencode.json`:
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
-    "opencode-models-discovery-proxy@latest"
+    ["opencode-models-discovery-proxy", {
+      "provider": "my-server"
+    }]
   ],
   "provider": {
     "my-server": {
@@ -51,11 +56,34 @@ Add the plugin and your llama-swap-proxy provider to `opencode.json`:
 }
 ```
 
-That's the minimal setup. On next startup, OpenCode will have all models from your llama-swap-proxy instance available automatically.
+The `provider` option must match the key used in the `provider` map — that's the name the plugin will look up in the `/v1/opencode` response. On next startup, OpenCode will have all models from your llama-swap-proxy instance available automatically.
+
+### Multiple servers
+
+To use more than one server, add the plugin once per provider:
+
+```json
+{
+  "plugin": [
+    ["opencode-models-discovery-proxy", { "provider": "my-server" }],
+    ["opencode-models-discovery-proxy", { "provider": "my-other-server" }]
+  ],
+  "provider": {
+    "my-server": {
+      "npm": "@ai-sdk/openai-compatible",
+      "options": { "baseURL": "http://192.168.2.44:5900/v1" }
+    },
+    "my-other-server": {
+      "npm": "@ai-sdk/openai-compatible",
+      "options": { "baseURL": "http://192.168.2.44:5901/v1" }
+    }
+  }
+}
+```
 
 ## `/v1/opencode` response format
 
-The plugin expects the endpoint to return a JSON document that conforms to the [OpenCode config schema](https://opencode.ai/config.json). Specifically, the `provider` section is what gets merged:
+The plugin expects the endpoint to return a JSON document conforming to the [OpenCode config schema](https://opencode.ai/config.json). The `provider` section is what gets read:
 
 ```json
 {
@@ -71,29 +99,20 @@ The plugin expects the endpoint to return a JSON document that conforms to the [
         "Llama-3.3-70B-Instruct-Q8_0": {
           "name": "Llama-3.3-70B-Instruct-Q8_0",
           "tool_call": true,
-          "limit": {
-            "context": 32768,
-            "output": 32768
-          }
+          "limit": { "context": 32768, "output": 32768 }
         },
         "Qwen3-8B-Q8_0": {
           "name": "Qwen3-8B-Q8_0",
           "reasoning": true,
           "tool_call": true,
-          "limit": {
-            "context": 200000,
-            "output": 200000
-          }
+          "limit": { "context": 200000, "output": 200000 }
         },
         "MiniCPM-V-4_5-Q8_0": {
           "name": "MiniCPM-V-4_5-Q8_0",
           "reasoning": true,
           "tool_call": true,
           "attachment": true,
-          "limit": {
-            "context": 200000,
-            "output": 200000
-          },
+          "limit": { "context": 200000, "output": 200000 },
           "modalities": {
             "input": ["text", "image"],
             "output": ["text"]
@@ -120,56 +139,22 @@ All model fields are optional except `name`. The server derives these from chat 
 
 ## Plugin configuration
 
-The plugin works with zero configuration, but you can fine-tune discovery behavior:
+| Option | Required | Description |
+| ------ | -------- | ----------- |
+| `provider` | **yes** | Exact name of the provider to hook into. Must match the key in your `provider` map. |
+| `models.includeRegex` | no | If non-empty, only inject models whose ID matches one of these patterns |
+| `models.excludeRegex` | no | Skip models whose ID matches any of these patterns (ignored when `includeRegex` is set) |
+
+Example with model filtering:
 
 ```json
-{
-  "plugin": [
-    ["opencode-models-discovery-proxy", {
-      "discovery": { "enabled": true },
-      "providers": {
-        "include": ["my-server"],
-        "exclude": []
-      },
-      "models": {
-        "includeRegex": [],
-        "excludeRegex": []
-      }
-    }]
-  ]
-}
-```
-
-| Option | Default | Description |
-| ------ | ------- | ----------- |
-| `discovery.enabled` | `true` | Master switch for all discovery |
-| `providers.include` | `[]` | If non-empty, only discover these providers |
-| `providers.exclude` | `[]` | Skip these providers (ignored when `include` is set) |
-| `models.includeRegex` | `[]` | If non-empty, only inject models whose ID matches one of these patterns |
-| `models.excludeRegex` | `[]` | Skip models whose ID matches any of these patterns (ignored when `includeRegex` is set) |
-
-You can also override discovery per-provider via `options.modelsDiscovery`:
-
-```json
-{
-  "provider": {
-    "my-server": {
-      "npm": "@ai-sdk/openai-compatible",
-      "options": {
-        "baseURL": "http://192.168.2.44:5900/v1",
-        "modelsDiscovery": {
-          "enabled": true,
-          "models": {
-            "excludeRegex": ["^Codestral-"]
-          }
-        }
-      }
-    }
+["opencode-models-discovery-proxy", {
+  "provider": "my-server",
+  "models": {
+    "includeRegex": ["^Llama-", "^Qwen3-"]
   }
-}
+}]
 ```
-
-`modelsDiscovery.enabled` on a provider overrides both `discovery.enabled` and the `providers.include/exclude` list for that specific provider. Provider-level model regex filters replace (not merge with) the global `models` filters.
 
 ## Logging
 

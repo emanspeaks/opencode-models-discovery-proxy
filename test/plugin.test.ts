@@ -2,60 +2,78 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { ModelDiscoveryPlugin } from '../src/index.ts'
 
 const mockFetch = vi.fn()
-global.fetch = mockFetch
+globalThis.fetch = mockFetch
 
-if (!global.AbortSignal.timeout) {
-  global.AbortSignal.timeout = vi.fn(() => {
+if (!globalThis.AbortSignal.timeout) {
+  globalThis.AbortSignal.timeout = vi.fn(() => {
     const controller = new AbortController()
     setTimeout(() => controller.abort(), 5000)
     return controller.signal
   })
 }
 
-function makeOpenCodeResponse(models: Record<string, any>) {
+const PROVIDER_NAME = 'local'
+const BASE_URL = 'http://127.0.0.1:11434'
+
+function makeOpenCodeResponse(providerName: string, models: Record<string, any>, extraProviderFields: Record<string, any> = {}) {
   return {
     ok: true,
     json: async () => ({
       $schema: 'https://opencode.ai/config.json',
       provider: {
-        local: { models }
-      }
-    })
+        [providerName]: {
+          npm: '@ai-sdk/openai-compatible',
+          name: providerName,
+          options: { baseURL: BASE_URL },
+          ...extraProviderFields,
+          models,
+        },
+      },
+    }),
+  }
+}
+
+function makeProviderV2(id: string, baseURL: string, apiKey?: string): any {
+  return {
+    id,
+    name: id,
+    source: 'config',
+    env: [],
+    key: apiKey,
+    options: { baseURL },
+    models: {},
   }
 }
 
 describe('ModelDiscovery Plugin', () => {
   let mockClient: any
-  let pluginHooks: any
+  let mockInput: any
 
-  beforeEach(async () => {
+  beforeEach(() => {
     mockFetch.mockClear()
 
     mockClient = {
       app: {
-        log: vi.fn().mockResolvedValue(true)
+        log: vi.fn().mockResolvedValue(true),
       },
       tui: {
-        showToast: vi.fn().mockResolvedValue(true)
-      }
+        showToast: vi.fn().mockResolvedValue(true),
+      },
     }
 
-    const mockInput: any = {
+    mockInput = {
       client: mockClient,
       project: {
         id: 'test-project',
         name: 'test',
         path: '/tmp',
         worktree: '',
-        time: { created: Date.now() }
+        time: { created: Date.now() },
       },
       directory: '/tmp',
       worktree: '',
       $: vi.fn(),
-      config: {}
     }
-
-    pluginHooks = await ModelDiscoveryPlugin(mockInput)
   })
 
   afterEach(() => {
@@ -63,647 +81,333 @@ describe('ModelDiscovery Plugin', () => {
   })
 
   describe('Plugin Initialization', () => {
-    it('should initialize successfully with valid client', async () => {
-      const mockInput: any = {
-        client: mockClient,
-        project: {
-          id: 'test-project',
-          name: 'test',
-          path: '/tmp',
-          worktree: '',
-          time: { created: Date.now() }
-        },
-        directory: '/tmp',
-        worktree: '',
-        $: vi.fn()
-      }
-      const hooks = await ModelDiscoveryPlugin(mockInput)
+    it('should initialize with provider hook when provider option is set', async () => {
+      const hooks = await ModelDiscoveryPlugin(mockInput, { provider: PROVIDER_NAME })
       expect(hooks).toBeDefined()
-      expect(hooks.config).toBeTypeOf('function')
+      expect(hooks.provider).toBeDefined()
+      expect(hooks.provider!.id).toBe(PROVIDER_NAME)
       expect(hooks.event).toBeTypeOf('function')
       expect(hooks['chat.params']).toBeTypeOf('function')
+    })
+
+    it('should not register provider hook when provider option is not set', async () => {
+      const hooks = await ModelDiscoveryPlugin(mockInput)
+      expect(hooks.provider).toBeUndefined()
+      expect(hooks.event).toBeTypeOf('function')
+      expect(hooks['chat.params']).toBeTypeOf('function')
+    })
+
+    it('should log a warning when provider option is not set', async () => {
+      await ModelDiscoveryPlugin(mockInput)
+      expect(mockClient.app.log).toHaveBeenCalledWith(expect.objectContaining({
+        body: expect.objectContaining({
+          level: 'warn',
+          message: expect.stringContaining('provider'),
+        }),
+      }))
     })
 
     it('should handle invalid client gracefully', async () => {
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      const mockInput: any = {
-        client: null,
-        project: {
-          id: 'test-project',
-          name: 'test',
-          path: '/tmp',
-          worktree: '',
-          time: { created: Date.now() }
-        },
-        directory: '/tmp',
-        worktree: '',
-        $: vi.fn()
-      }
-      const hooks = await ModelDiscoveryPlugin(mockInput)
-
+      const hooks = await ModelDiscoveryPlugin({ ...mockInput, client: null })
       expect(hooks).toBeDefined()
-      expect(hooks.config).toBeTypeOf('function')
       expect(hooks.event).toBeTypeOf('function')
       expect(hooks['chat.params']).toBeTypeOf('function')
-      expect(consoleSpy).toHaveBeenCalledWith('[opencode-models-discovery-proxy] Invalid client provided to plugin', { category: 'plugin' })
-
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[opencode-models-discovery-proxy] Invalid client provided to plugin',
+        { category: 'plugin' }
+      )
       consoleSpy.mockRestore()
     })
   })
 
-  describe('Config Hook', () => {
-    it('should validate config and reject invalid configurations', async () => {
-      await pluginHooks.config(null)
-      expect(mockClient.app.log).toHaveBeenLastCalledWith(expect.objectContaining({
-        body: expect.objectContaining({
-          service: 'opencode-models-discovery-proxy',
-          level: 'error',
-          message: 'Invalid config provided',
-          extra: expect.objectContaining({
-            category: 'config',
-            errors: expect.arrayContaining(['Config must be an object'])
-          })
-        })
-      }))
+  describe('Provider Hook', () => {
+    let hooks: any
+
+    beforeEach(async () => {
+      hooks = await ModelDiscoveryPlugin(mockInput, { provider: PROVIDER_NAME })
     })
 
-    it('should handle empty config gracefully', async () => {
-      await pluginHooks.config({})
-      expect(true).toBe(true)
+    it('should have correct provider id', () => {
+      expect(hooks.provider!.id).toBe(PROVIDER_NAME)
     })
 
-    it('should discover models for OpenAI-compatible providers', async () => {
-      mockFetch.mockResolvedValueOnce(makeOpenCodeResponse({
+    it('should discover models and return them as ModelV2 objects', async () => {
+      mockFetch.mockResolvedValueOnce(makeOpenCodeResponse(PROVIDER_NAME, {
         'test-model-1': { name: 'test-model-1', limit: { context: 200000, output: 200000 } },
         'test-model-2': { name: 'test-model-2', limit: { context: 200000, output: 200000 } },
       }))
 
-      const config: any = {
-        provider: {
-          ollama: {
-            npm: '@ai-sdk/openai-compatible',
-            name: 'Ollama',
-            options: { baseURL: 'http://127.0.0.1:11434/v1' },
-            models: {}
-          }
-        }
-      }
-      await pluginHooks.config(config)
+      const result = await hooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
 
-      expect(config.provider?.ollama?.models).toBeDefined()
-      expect(Object.keys(config.provider.ollama.models).length).toBe(2)
+      expect(Object.keys(result)).toHaveLength(2)
+      expect(result['test-model-1']).toBeDefined()
+      expect(result['test-model-2']).toBeDefined()
     })
 
-    it('should merge discovered models with existing config', async () => {
-      mockFetch.mockResolvedValue(makeOpenCodeResponse({
-        'new-model': { name: 'new-model', limit: { context: 200000, output: 200000 } },
+    it('should populate required ModelV2 fields', async () => {
+      mockFetch.mockResolvedValueOnce(makeOpenCodeResponse(PROVIDER_NAME, {
+        'my-model': { name: 'My Model', limit: { context: 32768, output: 4096 } },
       }))
 
-      const config: any = {
-        provider: {
-          ollama: {
-            npm: '@ai-sdk/openai-compatible',
-            name: 'Ollama',
-            options: { baseURL: 'http://127.0.0.1:11434/v1' },
-            models: {
-              'existing-model': { name: 'Existing Model' }
-            }
-          }
-        }
-      }
+      const result = await hooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
 
-      await pluginHooks.config(config)
-
-      expect(config.provider.ollama.models).toEqual({
-        'existing-model': { name: 'Existing Model' },
-        'new-model': expect.objectContaining({ name: 'new-model' })
+      expect(result['my-model']).toMatchObject({
+        id: 'my-model',
+        providerID: PROVIDER_NAME,
+        name: 'My Model',
+        status: 'active',
+        release_date: '',
+        options: {},
+        headers: {},
+        api: { id: 'my-model', url: BASE_URL, npm: '@ai-sdk/openai-compatible' },
+        cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+        limit: { context: 32768, output: 4096 },
       })
     })
 
-    it('should inject model configs as-is from the response', async () => {
-      mockFetch.mockResolvedValue(makeOpenCodeResponse({
-        'Llama-3.3-70B-Instruct-Q8_0': {
-          name: 'Llama-3.3-70B-Instruct-Q8_0',
+    it('should map tool_call, reasoning, and attachment to capabilities', async () => {
+      mockFetch.mockResolvedValueOnce(makeOpenCodeResponse(PROVIDER_NAME, {
+        'capable-model': {
+          name: 'capable-model',
+          reasoning: true,
           tool_call: true,
-          limit: { context: 32768, output: 32768 }
+          attachment: true,
+          limit: { context: 200000, output: 200000 },
         },
       }))
 
-      const config: any = {
-        provider: {
-          ollama: {
-            npm: '@ai-sdk/openai-compatible',
-            name: 'Ollama',
-            options: { baseURL: 'http://127.0.0.1:11434/v1' },
-            models: {}
-          }
-        }
-      }
+      const result = await hooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
 
-      await pluginHooks.config(config)
-
-      expect(config.provider.ollama.models['Llama-3.3-70B-Instruct-Q8_0']).toEqual({
-        name: 'Llama-3.3-70B-Instruct-Q8_0',
-        tool_call: true,
-        limit: { context: 32768, output: 32768 }
+      expect(result['capable-model'].capabilities).toMatchObject({
+        temperature: true,
+        reasoning: true,
+        toolcall: true,
+        attachment: true,
       })
     })
 
-    it('should handle provider offline gracefully', async () => {
-      mockFetch.mockRejectedValue(new Error('Connection refused'))
-
-      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-      const config: any = {
-        provider: {
-          ollama: {
-            npm: '@ai-sdk/openai-compatible',
-            name: 'Ollama',
-            options: { baseURL: 'http://127.0.0.1:11434/v1' }
-          }
-        }
-      }
-
-      await pluginHooks.config(config)
-
-      // Offline providers are handled silently
-      consoleSpy.mockRestore()
-    })
-
-    it('should skip non-OpenAI-compatible providers', async () => {
-      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-      const config: any = {
-        provider: {
-          anthropic: {
-            npm: '@ai-sdk/anthropic',
-            name: 'Anthropic',
-            options: { baseURL: 'https://api.anthropic.com' }
-          }
-        }
-      }
-
-      await pluginHooks.config(config)
-
-      expect(consoleSpy).not.toHaveBeenCalledWith(expect.stringContaining('appears to be offline'))
-      consoleSpy.mockRestore()
-    })
-
-    it('should skip providers in exclude list', async () => {
-      mockFetch.mockResolvedValue(makeOpenCodeResponse({
-        'test-model': { name: 'test-model' },
+    it('should default all capabilities to false when not specified', async () => {
+      mockFetch.mockResolvedValueOnce(makeOpenCodeResponse(PROVIDER_NAME, {
+        'basic-model': { name: 'basic-model', limit: { context: 4096, output: 4096 } },
       }))
 
-      const mockInput: any = {
-        client: mockClient,
-        project: {
-          id: 'test-project',
-          name: 'test',
-          path: '/tmp',
-          worktree: '',
-          time: { created: Date.now() }
-        },
-        directory: '/tmp',
-        worktree: '',
-        $: vi.fn()
-      }
+      const result = await hooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
 
-      const hooksWithConfig = await ModelDiscoveryPlugin(mockInput, {
-        providers: {
-          exclude: ['ollama']
-        }
+      expect(result['basic-model'].capabilities).toMatchObject({
+        reasoning: false,
+        toolcall: false,
+        attachment: false,
+        temperature: true,
+        interleaved: false,
       })
-
-      const config: any = {
-        provider: {
-          ollama: {
-            npm: '@ai-sdk/openai-compatible',
-            name: 'Ollama',
-            options: { baseURL: 'http://127.0.0.1:11434/v1' },
-            models: {}
-          }
-        }
-      }
-
-      await hooksWithConfig.config!(config)
-
-      // Filter check happens silently
     })
 
-    it('should only discover providers in include list', async () => {
-      mockFetch.mockResolvedValue(makeOpenCodeResponse({
-        'test-model': { name: 'test-model' },
+    it('should map modalities array to input/output capability booleans', async () => {
+      mockFetch.mockResolvedValueOnce(makeOpenCodeResponse(PROVIDER_NAME, {
+        'vision-model': {
+          name: 'vision-model',
+          attachment: true,
+          limit: { context: 200000, output: 200000 },
+          modalities: { input: ['text', 'image'], output: ['text'] },
+        },
       }))
 
-      const mockInput: any = {
-        client: mockClient,
-        project: {
-          id: 'test-project',
-          name: 'test',
-          path: '/tmp',
-          worktree: '',
-          time: { created: Date.now() }
-        },
-        directory: '/tmp',
-        worktree: '',
-        $: vi.fn()
-      }
+      const result = await hooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
 
-      const hooksWithConfig = await ModelDiscoveryPlugin(mockInput, {
-        providers: {
-          include: ['lmstudio']
-        }
+      expect(result['vision-model'].capabilities.input).toEqual({
+        text: true, image: true, audio: false, video: false, pdf: false,
+      })
+      expect(result['vision-model'].capabilities.output).toEqual({
+        text: true, image: false, audio: false, video: false, pdf: false,
+      })
+    })
+
+    it('should default to text-only input/output when modalities not specified', async () => {
+      mockFetch.mockResolvedValueOnce(makeOpenCodeResponse(PROVIDER_NAME, {
+        'text-model': { name: 'text-model', limit: { context: 4096, output: 4096 } },
+      }))
+
+      const result = await hooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+
+      expect(result['text-model'].capabilities.input).toEqual({
+        text: true, image: false, audio: false, video: false, pdf: false,
+      })
+      expect(result['text-model'].capabilities.output).toEqual({
+        text: true, image: false, audio: false, video: false, pdf: false,
+      })
+    })
+
+    it('should default context and output limits to 4096 when not specified', async () => {
+      mockFetch.mockResolvedValueOnce(makeOpenCodeResponse(PROVIDER_NAME, {
+        'no-limit-model': { name: 'no-limit-model' },
+      }))
+
+      const result = await hooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+
+      expect(result['no-limit-model'].limit).toEqual({ context: 4096, output: 4096 })
+    })
+
+    it('should return empty object when provider is offline', async () => {
+      mockFetch.mockRejectedValueOnce(new Error('Connection refused'))
+
+      const result = await hooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+
+      expect(result).toEqual({})
+    })
+
+    it('should return empty object when /v1/opencode returns non-ok response', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: false })
+
+      const result = await hooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+
+      expect(result).toEqual({})
+    })
+
+    it('should return empty object when provider name not found in response', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          provider: { 'different-provider': { models: { 'some-model': { name: 'some-model' } } } },
+        }),
       })
 
-      const config: any = {
-        provider: {
-          ollama: {
-            npm: '@ai-sdk/openai-compatible',
-            name: 'Ollama',
-            options: { baseURL: 'http://127.0.0.1:11434/v1' },
-            models: {}
+      const result = await hooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+
+      expect(result).toEqual({})
+    })
+
+    it('should return empty object when baseURL is missing', async () => {
+      const providerWithoutURL = { ...makeProviderV2(PROVIDER_NAME, ''), options: {} }
+
+      const result = await hooks.provider!.models!(providerWithoutURL, {})
+
+      expect(result).toEqual({})
+      expect(mockFetch).not.toHaveBeenCalled()
+    })
+
+    it('should return empty object when response has no provider block', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+
+      const result = await hooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+
+      expect(result).toEqual({})
+    })
+
+    it('should return empty object when provider has no models', async () => {
+      mockFetch.mockResolvedValueOnce(makeOpenCodeResponse(PROVIDER_NAME, {}))
+
+      const result = await hooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+
+      expect(result).toEqual({})
+    })
+
+    it('should only match the exact configured provider name', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          provider: {
+            'local-extra': { models: { 'wrong-model': { name: 'wrong-model' } } },
+            [PROVIDER_NAME]: { npm: '@ai-sdk/openai-compatible', models: { 'right-model': { name: 'right-model', limit: { context: 4096, output: 4096 } } } },
           },
-          lmstudio: {
-            npm: '@ai-sdk/openai-compatible',
-            name: 'LM Studio',
-            options: { baseURL: 'http://127.0.0.1:1234/v1' },
-            models: {}
-          }
-        }
-      }
-
-      await hooksWithConfig.config!(config)
-
-      expect(config.provider?.lmstudio?.models?.['test-model']).toBeDefined()
-      expect(config.provider?.ollama?.models).toEqual({})
-    })
-
-    it('should skip discovery when discovery.enabled is false', async () => {
-      mockFetch.mockResolvedValue(makeOpenCodeResponse({
-        'test-model': { name: 'test-model' },
-      }))
-
-      const mockInput: any = {
-        client: mockClient,
-        project: {
-          id: 'test-project',
-          name: 'test',
-          path: '/tmp',
-          worktree: '',
-          time: { created: Date.now() }
-        },
-        directory: '/tmp',
-        worktree: '',
-        $: vi.fn()
-      }
-
-      const hooksWithConfig = await ModelDiscoveryPlugin(mockInput, {
-        discovery: {
-          enabled: false
-        }
+        }),
       })
 
-      const config: any = {
-        provider: {
-          ollama: {
-            npm: '@ai-sdk/openai-compatible',
-            name: 'Ollama',
-            options: { baseURL: 'http://127.0.0.1:11434/v1' },
-            models: {}
-          }
-        }
-      }
+      const result = await hooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
 
-      await hooksWithConfig.config!(config)
-
-      expect(config.provider?.ollama?.models).toEqual({})
+      expect(result['right-model']).toBeDefined()
+      expect(result['wrong-model']).toBeUndefined()
     })
 
-    it('should allow provider-level discovery when global discovery is disabled', async () => {
-      mockFetch.mockResolvedValue(makeOpenCodeResponse({
-        'test-model': { name: 'test-model' },
-      }))
+    it('should pass the API key from provider.key to the request', async () => {
+      mockFetch.mockResolvedValueOnce(makeOpenCodeResponse(PROVIDER_NAME, {}))
 
-      const mockInput: any = {
-        client: mockClient,
-        project: {
-          id: 'test-project',
-          name: 'test',
-          path: '/tmp',
-          worktree: '',
-          time: { created: Date.now() }
-        },
-        directory: '/tmp',
-        worktree: '',
-        $: vi.fn()
-      }
+      const providerWithKey = makeProviderV2(PROVIDER_NAME, BASE_URL, 'my-secret-key')
+      await hooks.provider!.models!(providerWithKey, {})
 
-      const hooksWithConfig = await ModelDiscoveryPlugin(mockInput, {
-        discovery: {
-          enabled: false
-        }
-      })
-
-      const config: any = {
-        provider: {
-          ollama: {
-            npm: '@ai-sdk/openai-compatible',
-            name: 'Ollama',
-            options: {
-              baseURL: 'http://127.0.0.1:11434/v1',
-              modelsDiscovery: {
-                enabled: true
-              }
-            },
-            models: {}
-          }
-        }
-      }
-
-      await hooksWithConfig.config!(config)
-
-      expect(config.provider?.ollama?.models?.['test-model']).toBeDefined()
-    })
-
-    it('should skip provider when provider-level discovery is disabled', async () => {
-      mockFetch.mockResolvedValue(makeOpenCodeResponse({
-        'test-model': { name: 'test-model' },
-      }))
-
-      const mockInput: any = {
-        client: mockClient,
-        project: {
-          id: 'test-project',
-          name: 'test',
-          path: '/tmp',
-          worktree: '',
-          time: { created: Date.now() }
-        },
-        directory: '/tmp',
-        worktree: '',
-        $: vi.fn()
-      }
-
-      const hooksWithConfig = await ModelDiscoveryPlugin(mockInput, {
-        providers: {
-          include: ['ollama']
-        }
-      })
-
-      const config: any = {
-        provider: {
-          ollama: {
-            npm: '@ai-sdk/openai-compatible',
-            name: 'Ollama',
-            options: {
-              baseURL: 'http://127.0.0.1:11434/v1',
-              modelsDiscovery: {
-                enabled: false
-              }
-            },
-            models: {}
-          }
-        }
-      }
-
-      await hooksWithConfig.config!(config)
-
-      expect(config.provider?.ollama?.models).toEqual({})
-    })
-
-    it('should only discover models matching includeRegex', async () => {
-      mockFetch.mockResolvedValue(makeOpenCodeResponse({
-        'qwen/qwen3-30b-a3b': { name: 'qwen/qwen3-30b-a3b', limit: { context: 200000, output: 200000 } },
-        'bge-m3': { name: 'bge-m3', limit: { context: 8192, output: 8192 } },
-      }))
-
-      const mockInput: any = {
-        client: mockClient,
-        project: {
-          id: 'test-project',
-          name: 'test',
-          path: '/tmp',
-          worktree: '',
-          time: { created: Date.now() }
-        },
-        directory: '/tmp',
-        worktree: '',
-        $: vi.fn()
-      }
-
-      const hooksWithConfig = await ModelDiscoveryPlugin(mockInput, {
-        models: {
-          includeRegex: ['^qwen/']
-        }
-      })
-
-      const config: any = {
-        provider: {
-          ollama: {
-            npm: '@ai-sdk/openai-compatible',
-            name: 'Ollama',
-            options: { baseURL: 'http://127.0.0.1:11434/v1' },
-            models: {}
-          }
-        }
-      }
-
-      await hooksWithConfig.config!(config)
-
-      expect(config.provider.ollama.models['qwen/qwen3-30b-a3b']).toBeDefined()
-      expect(config.provider.ollama.models['bge-m3']).toBeUndefined()
-    })
-
-    it('should skip models matching excludeRegex', async () => {
-      mockFetch.mockResolvedValue(makeOpenCodeResponse({
-        'qwen/qwen3-30b-a3b': { name: 'qwen/qwen3-30b-a3b', limit: { context: 200000, output: 200000 } },
-        'bge-m3': { name: 'bge-m3', limit: { context: 8192, output: 8192 } },
-      }))
-
-      const mockInput: any = {
-        client: mockClient,
-        project: {
-          id: 'test-project',
-          name: 'test',
-          path: '/tmp',
-          worktree: '',
-          time: { created: Date.now() }
-        },
-        directory: '/tmp',
-        worktree: '',
-        $: vi.fn()
-      }
-
-      const hooksWithConfig = await ModelDiscoveryPlugin(mockInput, {
-        models: {
-          excludeRegex: ['^bge-']
-        }
-      })
-
-      const config: any = {
-        provider: {
-          ollama: {
-            npm: '@ai-sdk/openai-compatible',
-            name: 'Ollama',
-            options: { baseURL: 'http://127.0.0.1:11434/v1' },
-            models: {}
-          }
-        }
-      }
-
-      await hooksWithConfig.config!(config)
-
-      expect(config.provider.ollama.models['qwen/qwen3-30b-a3b']).toBeDefined()
-      expect(config.provider.ollama.models['bge-m3']).toBeUndefined()
-    })
-
-    it('should preserve explicitly configured models even when regex would filter them out', async () => {
-      mockFetch.mockResolvedValue(makeOpenCodeResponse({
-        'keep-me': { name: 'keep-me' },
-        'discover-me': { name: 'discover-me' },
-      }))
-
-      const mockInput: any = {
-        client: mockClient,
-        project: {
-          id: 'test-project',
-          name: 'test',
-          path: '/tmp',
-          worktree: '',
-          time: { created: Date.now() }
-        },
-        directory: '/tmp',
-        worktree: '',
-        $: vi.fn()
-      }
-
-      const hooksWithConfig = await ModelDiscoveryPlugin(mockInput, {
-        models: {
-          includeRegex: ['^discover-']
-        }
-      })
-
-      const config: any = {
-        provider: {
-          ollama: {
-            npm: '@ai-sdk/openai-compatible',
-            name: 'Ollama',
-            options: { baseURL: 'http://127.0.0.1:11434/v1' },
-            models: {
-              'keep-me': { name: 'Keep Me' }
-            }
-          }
-        }
-      }
-
-      await hooksWithConfig.config!(config)
-
-      expect(config.provider.ollama.models['keep-me']).toEqual({ name: 'Keep Me' })
-      expect(config.provider.ollama.models['discover-me']).toBeDefined()
-    })
-
-    it('should prefer provider-level model filters over global filters', async () => {
-      mockFetch.mockResolvedValue(makeOpenCodeResponse({
-        'qwen/qwen3-30b-a3b': { name: 'qwen/qwen3-30b-a3b', tool_call: true, limit: { context: 200000, output: 200000 } },
-        'bge-m3': { name: 'bge-m3', limit: { context: 8192, output: 8192 } },
-      }))
-
-      const mockInput: any = {
-        client: mockClient,
-        project: {
-          id: 'test-project',
-          name: 'test',
-          path: '/tmp',
-          worktree: '',
-          time: { created: Date.now() }
-        },
-        directory: '/tmp',
-        worktree: '',
-        $: vi.fn()
-      }
-
-      const hooksWithConfig = await ModelDiscoveryPlugin(mockInput, {
-        models: {
-          includeRegex: ['^bge-']
-        }
-      })
-
-      const config: any = {
-        provider: {
-          ollama: {
-            npm: '@ai-sdk/openai-compatible',
-            name: 'Ollama',
-            options: {
-              baseURL: 'http://127.0.0.1:11434/v1',
-              modelsDiscovery: {
-                models: {
-                  includeRegex: ['^qwen/']
-                }
-              }
-            },
-            models: {}
-          }
-        }
-      }
-
-      await hooksWithConfig.config!(config)
-
-      expect(config.provider.ollama.models['qwen/qwen3-30b-a3b']).toEqual(
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
         expect.objectContaining({
-          name: 'qwen/qwen3-30b-a3b',
-          tool_call: true,
+          headers: expect.objectContaining({ Authorization: 'Bearer my-secret-key' }),
         })
       )
-      expect(config.provider.ollama.models['bge-m3']).toBeUndefined()
     })
+  })
 
-    it('should use global model filters when provider-level filters are not configured', async () => {
-      mockFetch.mockResolvedValue(makeOpenCodeResponse({
-        'qwen/qwen3-30b-a3b': { name: 'qwen/qwen3-30b-a3b', limit: { context: 200000, output: 200000 } },
-        'qwen/qwen3-8b': { name: 'qwen/qwen3-8b', limit: { context: 200000, output: 200000 } },
+  describe('Provider Hook - Model Filtering', () => {
+    it('should apply includeRegex to filter models', async () => {
+      const filteredHooks = await ModelDiscoveryPlugin(mockInput, {
+        provider: PROVIDER_NAME,
+        models: { includeRegex: ['^qwen/'] },
+      })
+
+      mockFetch.mockResolvedValueOnce(makeOpenCodeResponse(PROVIDER_NAME, {
+        'qwen/qwen3-30b': { name: 'qwen/qwen3-30b', limit: { context: 200000, output: 200000 } },
         'bge-m3': { name: 'bge-m3', limit: { context: 8192, output: 8192 } },
       }))
 
-      const mockInput: any = {
-        client: mockClient,
-        project: {
-          id: 'test-project',
-          name: 'test',
-          path: '/tmp',
-          worktree: '',
-          time: { created: Date.now() }
-        },
-        directory: '/tmp',
-        worktree: '',
-        $: vi.fn()
-      }
+      const result = await filteredHooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
 
-      const hooksWithConfig = await ModelDiscoveryPlugin(mockInput, {
-        models: {
-          includeRegex: ['^qwen/']
-        }
+      expect(result['qwen/qwen3-30b']).toBeDefined()
+      expect(result['bge-m3']).toBeUndefined()
+    })
+
+    it('should apply excludeRegex to filter models', async () => {
+      const filteredHooks = await ModelDiscoveryPlugin(mockInput, {
+        provider: PROVIDER_NAME,
+        models: { excludeRegex: ['^bge-'] },
       })
 
-      const config: any = {
-        provider: {
-          ollama: {
-            npm: '@ai-sdk/openai-compatible',
-            name: 'Ollama',
-            options: {
-              baseURL: 'http://127.0.0.1:11434/v1'
-            },
-            models: {}
-          }
-        }
-      }
+      mockFetch.mockResolvedValueOnce(makeOpenCodeResponse(PROVIDER_NAME, {
+        'qwen/qwen3-30b': { name: 'qwen/qwen3-30b', limit: { context: 200000, output: 200000 } },
+        'bge-m3': { name: 'bge-m3', limit: { context: 8192, output: 8192 } },
+      }))
 
-      await hooksWithConfig.config!(config)
+      const result = await filteredHooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
 
-      expect(config.provider.ollama.models['qwen/qwen3-30b-a3b']).toBeDefined()
-      expect(config.provider.ollama.models['qwen/qwen3-8b']).toBeDefined()
-      expect(config.provider.ollama.models['bge-m3']).toBeUndefined()
+      expect(result['qwen/qwen3-30b']).toBeDefined()
+      expect(result['bge-m3']).toBeUndefined()
+    })
+
+    it('should return all models when no regex filter is configured', async () => {
+      mockFetch.mockResolvedValueOnce(makeOpenCodeResponse(PROVIDER_NAME, {
+        'model-a': { name: 'model-a', limit: { context: 4096, output: 4096 } },
+        'model-b': { name: 'model-b', limit: { context: 4096, output: 4096 } },
+        'model-c': { name: 'model-c', limit: { context: 4096, output: 4096 } },
+      }))
+
+      const noFilterHooks = await ModelDiscoveryPlugin(mockInput, { provider: PROVIDER_NAME })
+      const result = await noFilterHooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+
+      expect(Object.keys(result)).toHaveLength(3)
+    })
+
+    it('should handle invalid regex patterns gracefully', async () => {
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const invalidRegexHooks = await ModelDiscoveryPlugin(mockInput, {
+        provider: PROVIDER_NAME,
+        models: { includeRegex: ['[invalid'] },
+      })
+
+      mockFetch.mockResolvedValueOnce(makeOpenCodeResponse(PROVIDER_NAME, {
+        'model-a': { name: 'model-a', limit: { context: 4096, output: 4096 } },
+      }))
+
+      const result = await invalidRegexHooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+
+      // Invalid regex is ignored — no includeRegex means all models pass
+      expect(result['model-a']).toBeDefined()
+      consoleSpy.mockRestore()
     })
   })
 
   describe('Event Hook', () => {
+    let pluginHooks: any
+
+    beforeEach(async () => {
+      pluginHooks = await ModelDiscoveryPlugin(mockInput, { provider: PROVIDER_NAME })
+    })
+
     it('should validate event input', async () => {
       await pluginHooks.event({ event: null })
       expect(mockClient.app.log).toHaveBeenLastCalledWith(expect.objectContaining({
@@ -713,9 +417,9 @@ describe('ModelDiscovery Plugin', () => {
           message: 'Invalid event input',
           extra: expect.objectContaining({
             category: 'event',
-            errors: expect.arrayContaining(['event: event is required and must be an object'])
-          })
-        })
+            errors: expect.arrayContaining(['event: event is required and must be an object']),
+          }),
+        }),
       }))
     })
 
@@ -726,6 +430,12 @@ describe('ModelDiscovery Plugin', () => {
   })
 
   describe('Chat Params Hook', () => {
+    let pluginHooks: any
+
+    beforeEach(async () => {
+      pluginHooks = await ModelDiscoveryPlugin(mockInput, { provider: PROVIDER_NAME })
+    })
+
     it('should be defined as a function', () => {
       expect(pluginHooks['chat.params']).toBeTypeOf('function')
     })
@@ -736,82 +446,42 @@ describe('ModelDiscovery Plugin', () => {
         model: { id: 'test-model' },
         provider: {
           npm: '@ai-sdk/openai-compatible',
-          info: { id: 'ollama' },
-          options: { baseURL: 'http://127.0.0.1:11434/v1' }
-        }
+          info: { id: PROVIDER_NAME },
+          options: { baseURL: BASE_URL },
+        },
       }
       const output: any = {}
 
       await pluginHooks['chat.params'](input, output)
 
-      // Validation is disabled - no operations should be performed
       expect(output).toEqual({})
       expect(mockClient.tui.showToast).not.toHaveBeenCalled()
     })
   })
 
   describe('Error Handling', () => {
-    it('should handle config enhancement errors', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    it('should show toast and return empty object when model mapping throws unexpectedly', async () => {
+      const errorHooks = await ModelDiscoveryPlugin(mockInput, { provider: PROVIDER_NAME })
 
-      mockFetch.mockRejectedValue(new Error('Discovery failed'))
+      // Simulate an error that escapes fetchOpenCodeConfig's own try/catch
+      // by having the response.json() throw synchronously in a way that propagates
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => { throw new Error('Unexpected processing error') },
+      })
 
-      const config: any = {}
-      await pluginHooks.config(config)
+      const result = await errorHooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
 
-      expect(true).toBe(true)
-
-      consoleSpy.mockRestore()
-    })
-  })
-
-  describe('Multi-Provider Support', () => {
-    it('should discover models for multiple OpenAI-compatible providers', async () => {
-      mockFetch.mockResolvedValue(makeOpenCodeResponse({
-        'ollama-model-1': { name: 'ollama-model-1', limit: { context: 200000, output: 200000 } },
-      }))
-
-      const config: any = {
-        provider: {
-          ollama: {
-            npm: '@ai-sdk/openai-compatible',
-            name: 'Ollama',
-            options: { baseURL: 'http://127.0.0.1:11434/v1' },
-            models: {}
-          },
-          lmstudio: {
-            npm: '@ai-sdk/openai-compatible',
-            name: 'LM Studio',
-            options: { baseURL: 'http://127.0.0.1:1234/v1' },
-            models: {}
-          }
-        }
-      }
-
-      await pluginHooks.config(config)
-
-      expect(config.provider.ollama.models['ollama-model-1']).toBeDefined()
+      expect(result).toEqual({})
     })
 
-    it('should discover models for providers with Anthropic npm but OpenAI-compatible URL', async () => {
-      mockFetch.mockResolvedValue(makeOpenCodeResponse({
-        'anthropic-compatible-model': { name: 'anthropic-compatible-model', limit: { context: 200000, output: 200000 } },
-      }))
+    it('should not throw when provider hook encounters an error', async () => {
+      const errorHooks = await ModelDiscoveryPlugin(mockInput, { provider: PROVIDER_NAME })
+      mockFetch.mockRejectedValueOnce(new Error('Network failure'))
 
-      const config: any = {
-        provider: {
-          ollama: {
-            npm: '@ai-sdk/anthropic',
-            name: 'Ollama (Anthropic Mode)',
-            options: { baseURL: 'http://127.0.0.1:11434/v1' },
-            models: {}
-          }
-        }
-      }
-
-      await pluginHooks.config(config)
-
-      expect(config.provider.ollama.models['anthropic-compatible-model']).toBeDefined()
+      await expect(
+        errorHooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+      ).resolves.toEqual({})
     })
   })
 })

@@ -33,19 +33,3 @@ export async function fetchOpenCodeConfig(baseURL: string, apiKey?: string): Pro
     return null
   }
 }
-
-export function isOpenAICompatibleProvider(provider: any): boolean {
-  return provider &&
-         typeof provider === 'object' &&
-         provider.npm === "@ai-sdk/openai-compatible"
-}
-
-export function hasOpenAICompatibleURL(provider: any): boolean {
-  if (!provider || typeof provider !== 'object') return false
-  const baseURL = provider.options?.baseURL || ""
-  return /\/v1(\/|$)/.test(baseURL)
-}
-
-export function canDiscoverModels(provider: any): boolean {
-  return isOpenAICompatibleProvider(provider) || hasOpenAICompatibleURL(provider)
-}
