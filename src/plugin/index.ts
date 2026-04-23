@@ -32,8 +32,6 @@ export const ModelDiscoveryPlugin: Plugin = async (input: PluginInput, options?:
   return {
     config: createConfigHook(client, toastNotifier, pluginConfig, logger.child({ category: 'config' })),
     event: createEventHook(logger.child({ category: 'event' })),
-    "chat.params": createChatParamsHook(toastNotifier, pluginConfig),
+    "chat.params": createChatParamsHook(),
   }
 }
-
-//export const LMStudioPlugin = ModelDiscoveryPlugin
