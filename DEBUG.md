@@ -1,82 +1,98 @@
-# Debugging opencode-models-discovery-proxy in OpenCode TUI
+# Debugging opencode-models-discovery-proxy
 
-## How to Debug
+## How the Plugin Works (Post v0.9.1)
 
-When you run OpenCode in TUI mode, check the console output for these log messages:
+The plugin uses the `config` hook, which fires with the full user config before OpenCode initializes providers. It reads `config.provider[name].options.baseURL`, fetches models from `/v1/opencode`, and injects them into `config.provider[name].models` — so OpenCode sees the models as if they were written statically in `opencode.jsonc`.
 
-### Expected Log Sequence
+> **Why not the `provider` hook?** As of OpenCode v1.14.30, the `provider.models` hook only fires for providers in the models.dev database. Custom providers added via user config are processed _after_ that hook runs, so it never fires for them.
 
-1. `[opencode-models-discovery-proxy] Model discovery plugin initialized` - Plugin loaded
-2. A config hook log indicating discovery/config processing started - Config hook invoked
-3. Provider creation or provider check logs - Provider instantiated successfully
-4. Discovery logs for `/v1/models` requests - Model discovery started
-5. Model discovery summary logs - Models found
-6. Model merge/injection logs - Models added to config
-7. Final config hook completion logs - Hook completed
-
-### What to Check
-
-1. **Is the plugin loaded?**
-   - Look for: `[opencode-models-discovery-proxy] Model discovery plugin initialized`
-   - If missing: Plugin not installed or not in config
-
-2. **Is the config hook being called?**
-   - Look for config-related logs after plugin initialization
-   - If missing: OpenCode might not be calling the hook
-
-3. **Are models being discovered?**
-   - Look for discovery logs or a discovered model count for your provider
-   - If count is 0: The provider might not be running, reachable, or exposing any models
-
-4. **Are models being added to config?**
-   - Look for model merge/injection logs
-   - Check: `modelCount` in the final log message
-
-5. **Is the config frozen?**
-   - Look for: `configFrozen: true` in the debug log
-   - If true: OpenCode might be passing a frozen config object
-
-### Common Issues
-
-#### Issue: Models not showing in OpenCode
-
-**Possible causes:**
-
-1. Config hook not being awaited by OpenCode
-2. Config object is frozen/read-only
-3. OpenCode reads config before hook completes
-4. Config object is cloned before hook runs
-
-**Debug steps:**
-
-1. Check console logs for the sequence above
-2. Look for warnings about frozen config
-3. Check if `modelCount` is 0 in final log
-4. Verify your provider is running: `curl http://127.0.0.1:1234/v1/models`
-
-#### Issue: Plugin not loading
-
-**Check:**
-
-1. Plugin is in `opencode.json`: `"plugin": ["opencode-models-discovery-proxy"]`
-2. Plugin is installed: `npm list opencode-models-discovery-proxy`
-3. No errors in OpenCode startup logs
-
-#### Issue: Provider not detected
-
-**Check:**
-
-1. Your provider service is running
-2. Its OpenAI-compatible API endpoint is active
-3. The configured port is correct
-4. Try: `curl http://127.0.0.1:1234/v1/models`
-
-### Manual Test
-
-Run this to test the plugin directly:
+## Enabling Logs
 
 ```bash
-bun debug-opencode-simulation.ts
+opencode --print-logs
 ```
 
-This simulates how OpenCode calls the plugin and shows if models are loaded correctly.
+## Expected Log Sequence
+
+1. `[opencode-models-discovery-proxy] Model discovery plugin initialized` — plugin loaded
+2. `[opencode-models-discovery-proxy] [config] Provider <name> has no baseURL configured` — OR:
+3. `[opencode-models-discovery-proxy] [config] No /v1/opencode response from provider <name>` — OR:
+4. `[opencode-models-discovery-proxy] [config] Injected N models for provider <name>` — success
+
+## What to Check
+
+### 1. Is the plugin loading?
+
+Look for: `Model discovery plugin initialized`
+
+If missing: plugin is not installed or not listed in `opencode.jsonc`.
+
+```bash
+npm list opencode-models-discovery-proxy
+```
+
+Check your config has:
+
+```jsonc
+"plugin": [["opencode-models-discovery-proxy", { "provider": "your-provider-name" }]]
+```
+
+### 2. Is the provider configured with a baseURL?
+
+Look for: `Provider <name> has no baseURL configured`
+
+If this appears, your `opencode.jsonc` is missing the provider entry or `options.baseURL`:
+
+```jsonc
+"provider": {
+  "your-provider-name": {
+    "npm": "@ai-sdk/openai-compatible",
+    "name": "Your Provider",
+    "options": {
+      "baseURL": "http://192.168.2.44:5900/v1"
+    }
+  }
+}
+```
+
+The plugin name in `plugin` options must **exactly match** the key under `provider`.
+
+### 3. Is the remote server reachable?
+
+Look for: `No /v1/opencode response from provider <name>`
+
+Test the endpoint directly:
+
+```bash
+curl http://YOUR_HOST:PORT/v1/opencode
+```
+
+The response should be a JSON object with a `provider` key containing your provider name and its models.
+
+### 4. Is your provider name in the remote response?
+
+Look for: `Provider <name> not found in /v1/opencode response`
+
+The provider key in `/v1/opencode` must exactly match the `provider` option in your plugin config.
+
+### 5. Are models being injected?
+
+Look for: `Injected N models for provider <name>`
+
+If N is 0 and no other warning appears, either the remote server returned no models, or all models were filtered out by `includeRegex`/`excludeRegex`.
+
+## Common Issues
+
+### Provider or models not visible in OpenCode UI
+
+1. Confirm the plugin initializes (step 1 above)
+2. Confirm models are injected (step 5 above)
+3. If injection succeeds but models still don't appear, check that the provider's `npm` package is installed and the `baseURL` is reachable from OpenCode
+
+### Plugin not loading on Windows / Node
+
+OpenCode v1.14.20 fixed dynamic import issues on Windows with Node.js. Ensure you're on OpenCode ≥ 1.14.20.
+
+### "Model discovery failed" toast
+
+An unexpected error occurred during model fetching. Check the logs for an error line immediately before or after the toast. Common causes: network timeout (5s limit), malformed JSON from the remote server, or an exception in regex compilation.

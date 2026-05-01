@@ -33,15 +33,18 @@ function makeOpenCodeResponse(providerName: string, models: Record<string, any>,
   }
 }
 
-function makeProviderV2(id: string, baseURL: string, apiKey?: string): any {
+function makeConfig(providerName: string, baseURL: string, apiKey?: string): any {
   return {
-    id,
-    name: id,
-    source: 'config',
-    env: [],
-    key: apiKey,
-    options: { baseURL },
-    models: {},
+    provider: {
+      [providerName]: {
+        npm: '@ai-sdk/openai-compatible',
+        name: providerName,
+        options: {
+          baseURL,
+          ...(apiKey && { apiKey }),
+        },
+      },
+    },
   }
 }
 
@@ -81,18 +84,17 @@ describe('ModelDiscovery Plugin', () => {
   })
 
   describe('Plugin Initialization', () => {
-    it('should initialize with provider hook when provider option is set', async () => {
+    it('should initialize with config hook when provider option is set', async () => {
       const hooks = await ModelDiscoveryPlugin(mockInput, { provider: PROVIDER_NAME })
       expect(hooks).toBeDefined()
-      expect(hooks.provider).toBeDefined()
-      expect(hooks.provider!.id).toBe(PROVIDER_NAME)
+      expect(hooks.config).toBeTypeOf('function')
       expect(hooks.event).toBeTypeOf('function')
       expect(hooks['chat.params']).toBeTypeOf('function')
     })
 
-    it('should not register provider hook when provider option is not set', async () => {
+    it('should not register config hook when provider option is not set', async () => {
       const hooks = await ModelDiscoveryPlugin(mockInput)
-      expect(hooks.provider).toBeUndefined()
+      expect(hooks.config).toBeUndefined()
       expect(hooks.event).toBeTypeOf('function')
       expect(hooks['chat.params']).toBeTypeOf('function')
     })
@@ -121,52 +123,53 @@ describe('ModelDiscovery Plugin', () => {
     })
   })
 
-  describe('Provider Hook', () => {
+  describe('Config Hook', () => {
     let hooks: any
 
     beforeEach(async () => {
       hooks = await ModelDiscoveryPlugin(mockInput, { provider: PROVIDER_NAME })
     })
 
-    it('should have correct provider id', () => {
-      expect(hooks.provider!.id).toBe(PROVIDER_NAME)
-    })
-
-    it('should discover models and return them as ModelV2 objects', async () => {
+    it('should inject discovered models into config.provider[name].models', async () => {
       mockFetch.mockResolvedValueOnce(makeOpenCodeResponse(PROVIDER_NAME, {
         'test-model-1': { name: 'test-model-1', limit: { context: 200000, output: 200000 } },
         'test-model-2': { name: 'test-model-2', limit: { context: 200000, output: 200000 } },
       }))
 
-      const result = await hooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+      const config = makeConfig(PROVIDER_NAME, BASE_URL)
+      await hooks.config!(config)
 
-      expect(Object.keys(result)).toHaveLength(2)
-      expect(result['test-model-1']).toBeDefined()
-      expect(result['test-model-2']).toBeDefined()
+      expect(Object.keys(config.provider[PROVIDER_NAME].models)).toHaveLength(2)
+      expect(config.provider[PROVIDER_NAME].models['test-model-1']).toBeDefined()
+      expect(config.provider[PROVIDER_NAME].models['test-model-2']).toBeDefined()
     })
 
-    it('should populate required ModelV2 fields', async () => {
+    it('should inject model name and limit fields', async () => {
       mockFetch.mockResolvedValueOnce(makeOpenCodeResponse(PROVIDER_NAME, {
         'my-model': { name: 'My Model', limit: { context: 32768, output: 4096 } },
       }))
 
-      const result = await hooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+      const config = makeConfig(PROVIDER_NAME, BASE_URL)
+      await hooks.config!(config)
 
-      expect(result['my-model']).toMatchObject({
-        id: 'my-model',
-        providerID: PROVIDER_NAME,
+      expect(config.provider[PROVIDER_NAME].models['my-model']).toMatchObject({
         name: 'My Model',
-        status: 'active',
-        release_date: '',
-        options: {},
-        headers: {},
-        api: { id: 'my-model', url: BASE_URL, npm: '@ai-sdk/openai-compatible' },
-        cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
         limit: { context: 32768, output: 4096 },
       })
     })
 
-    it('should map tool_call, reasoning, and attachment to capabilities', async () => {
+    it('should use model key as name when remote name is absent', async () => {
+      mockFetch.mockResolvedValueOnce(makeOpenCodeResponse(PROVIDER_NAME, {
+        'unnamed-model': { limit: { context: 4096, output: 4096 } },
+      }))
+
+      const config = makeConfig(PROVIDER_NAME, BASE_URL)
+      await hooks.config!(config)
+
+      expect(config.provider[PROVIDER_NAME].models['unnamed-model'].name).toBe('unnamed-model')
+    })
+
+    it('should inject tool_call, reasoning, and attachment fields', async () => {
       mockFetch.mockResolvedValueOnce(makeOpenCodeResponse(PROVIDER_NAME, {
         'capable-model': {
           name: 'capable-model',
@@ -177,33 +180,31 @@ describe('ModelDiscovery Plugin', () => {
         },
       }))
 
-      const result = await hooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+      const config = makeConfig(PROVIDER_NAME, BASE_URL)
+      await hooks.config!(config)
 
-      expect(result['capable-model'].capabilities).toMatchObject({
-        temperature: true,
+      expect(config.provider[PROVIDER_NAME].models['capable-model']).toMatchObject({
         reasoning: true,
-        toolcall: true,
+        tool_call: true,
         attachment: true,
       })
     })
 
-    it('should default all capabilities to false when not specified', async () => {
+    it('should omit capability fields when not specified by the remote model', async () => {
       mockFetch.mockResolvedValueOnce(makeOpenCodeResponse(PROVIDER_NAME, {
         'basic-model': { name: 'basic-model', limit: { context: 4096, output: 4096 } },
       }))
 
-      const result = await hooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+      const config = makeConfig(PROVIDER_NAME, BASE_URL)
+      await hooks.config!(config)
 
-      expect(result['basic-model'].capabilities).toMatchObject({
-        reasoning: false,
-        toolcall: false,
-        attachment: false,
-        temperature: true,
-        interleaved: false,
-      })
+      const model = config.provider[PROVIDER_NAME].models['basic-model']
+      expect(model.reasoning).toBeUndefined()
+      expect(model.tool_call).toBeUndefined()
+      expect(model.attachment).toBeUndefined()
     })
 
-    it('should map modalities array to input/output capability booleans', async () => {
+    it('should pass through modalities from the remote model', async () => {
       mockFetch.mockResolvedValueOnce(makeOpenCodeResponse(PROVIDER_NAME, {
         'vision-model': {
           name: 'vision-model',
@@ -213,58 +214,59 @@ describe('ModelDiscovery Plugin', () => {
         },
       }))
 
-      const result = await hooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+      const config = makeConfig(PROVIDER_NAME, BASE_URL)
+      await hooks.config!(config)
 
-      expect(result['vision-model'].capabilities.input).toEqual({
-        text: true, image: true, audio: false, video: false, pdf: false,
-      })
-      expect(result['vision-model'].capabilities.output).toEqual({
-        text: true, image: false, audio: false, video: false, pdf: false,
+      expect(config.provider[PROVIDER_NAME].models['vision-model'].modalities).toEqual({
+        input: ['text', 'image'],
+        output: ['text'],
       })
     })
 
-    it('should default to text-only input/output when modalities not specified', async () => {
+    it('should omit modalities when not specified by the remote model', async () => {
       mockFetch.mockResolvedValueOnce(makeOpenCodeResponse(PROVIDER_NAME, {
         'text-model': { name: 'text-model', limit: { context: 4096, output: 4096 } },
       }))
 
-      const result = await hooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+      const config = makeConfig(PROVIDER_NAME, BASE_URL)
+      await hooks.config!(config)
 
-      expect(result['text-model'].capabilities.input).toEqual({
-        text: true, image: false, audio: false, video: false, pdf: false,
-      })
-      expect(result['text-model'].capabilities.output).toEqual({
-        text: true, image: false, audio: false, video: false, pdf: false,
-      })
+      expect(config.provider[PROVIDER_NAME].models['text-model'].modalities).toBeUndefined()
     })
 
-    it('should default context and output limits to 4096 when not specified', async () => {
+    it('should preserve existing models in config when injecting', async () => {
       mockFetch.mockResolvedValueOnce(makeOpenCodeResponse(PROVIDER_NAME, {
-        'no-limit-model': { name: 'no-limit-model' },
+        'new-model': { name: 'new-model' },
       }))
 
-      const result = await hooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+      const config = makeConfig(PROVIDER_NAME, BASE_URL)
+      config.provider[PROVIDER_NAME].models = { 'existing-model': { name: 'existing-model' } }
+      await hooks.config!(config)
 
-      expect(result['no-limit-model'].limit).toEqual({ context: 4096, output: 4096 })
+      expect(config.provider[PROVIDER_NAME].models['existing-model']).toBeDefined()
+      expect(config.provider[PROVIDER_NAME].models['new-model']).toBeDefined()
     })
 
-    it('should return empty object when provider is offline', async () => {
+    it('should do nothing when provider is offline', async () => {
       mockFetch.mockRejectedValueOnce(new Error('Connection refused'))
 
-      const result = await hooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+      const config = makeConfig(PROVIDER_NAME, BASE_URL)
+      await hooks.config!(config)
 
-      expect(result).toEqual({})
+      expect(config.provider[PROVIDER_NAME].models).toBeUndefined()
+      expect(mockClient.tui.showToast).not.toHaveBeenCalled()
     })
 
-    it('should return empty object when /v1/opencode returns non-ok response', async () => {
+    it('should do nothing when /v1/opencode returns non-ok response', async () => {
       mockFetch.mockResolvedValueOnce({ ok: false })
 
-      const result = await hooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+      const config = makeConfig(PROVIDER_NAME, BASE_URL)
+      await hooks.config!(config)
 
-      expect(result).toEqual({})
+      expect(config.provider[PROVIDER_NAME].models).toBeUndefined()
     })
 
-    it('should return empty object when provider name not found in response', async () => {
+    it('should do nothing when provider name not found in response', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -272,34 +274,36 @@ describe('ModelDiscovery Plugin', () => {
         }),
       })
 
-      const result = await hooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+      const config = makeConfig(PROVIDER_NAME, BASE_URL)
+      await hooks.config!(config)
 
-      expect(result).toEqual({})
+      expect(config.provider[PROVIDER_NAME].models).toBeUndefined()
     })
 
-    it('should return empty object when baseURL is missing', async () => {
-      const providerWithoutURL = { ...makeProviderV2(PROVIDER_NAME, ''), options: {} }
+    it('should warn and skip fetch when baseURL is missing from config', async () => {
+      const config = { provider: { [PROVIDER_NAME]: { options: {} } } }
+      await hooks.config!(config)
 
-      const result = await hooks.provider!.models!(providerWithoutURL, {})
-
-      expect(result).toEqual({})
       expect(mockFetch).not.toHaveBeenCalled()
+      expect((config.provider[PROVIDER_NAME] as any).models).toBeUndefined()
     })
 
-    it('should return empty object when response has no provider block', async () => {
+    it('should do nothing when response has no provider block', async () => {
       mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) })
 
-      const result = await hooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+      const config = makeConfig(PROVIDER_NAME, BASE_URL)
+      await hooks.config!(config)
 
-      expect(result).toEqual({})
+      expect(config.provider[PROVIDER_NAME].models).toBeUndefined()
     })
 
-    it('should return empty object when provider has no models', async () => {
+    it('should do nothing when remote provider has no models', async () => {
       mockFetch.mockResolvedValueOnce(makeOpenCodeResponse(PROVIDER_NAME, {}))
 
-      const result = await hooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+      const config = makeConfig(PROVIDER_NAME, BASE_URL)
+      await hooks.config!(config)
 
-      expect(result).toEqual({})
+      expect(config.provider[PROVIDER_NAME].models).toBeUndefined()
     })
 
     it('should only match the exact configured provider name', async () => {
@@ -308,22 +312,23 @@ describe('ModelDiscovery Plugin', () => {
         json: async () => ({
           provider: {
             'local-extra': { models: { 'wrong-model': { name: 'wrong-model' } } },
-            [PROVIDER_NAME]: { npm: '@ai-sdk/openai-compatible', models: { 'right-model': { name: 'right-model', limit: { context: 4096, output: 4096 } } } },
+            [PROVIDER_NAME]: { npm: '@ai-sdk/openai-compatible', models: { 'right-model': { name: 'right-model' } } },
           },
         }),
       })
 
-      const result = await hooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+      const config = makeConfig(PROVIDER_NAME, BASE_URL)
+      await hooks.config!(config)
 
-      expect(result['right-model']).toBeDefined()
-      expect(result['wrong-model']).toBeUndefined()
+      expect(config.provider[PROVIDER_NAME].models['right-model']).toBeDefined()
+      expect(config.provider[PROVIDER_NAME].models['wrong-model']).toBeUndefined()
     })
 
-    it('should pass the API key from provider.key to the request', async () => {
+    it('should pass the API key from config provider options to the request', async () => {
       mockFetch.mockResolvedValueOnce(makeOpenCodeResponse(PROVIDER_NAME, {}))
 
-      const providerWithKey = makeProviderV2(PROVIDER_NAME, BASE_URL, 'my-secret-key')
-      await hooks.provider!.models!(providerWithKey, {})
+      const config = makeConfig(PROVIDER_NAME, BASE_URL, 'my-secret-key')
+      await hooks.config!(config)
 
       expect(mockFetch).toHaveBeenCalledWith(
         expect.any(String),
@@ -334,7 +339,7 @@ describe('ModelDiscovery Plugin', () => {
     })
   })
 
-  describe('Provider Hook - Model Filtering', () => {
+  describe('Config Hook - Model Filtering', () => {
     it('should apply includeRegex to filter models', async () => {
       const filteredHooks = await ModelDiscoveryPlugin(mockInput, {
         provider: PROVIDER_NAME,
@@ -346,10 +351,11 @@ describe('ModelDiscovery Plugin', () => {
         'bge-m3': { name: 'bge-m3', limit: { context: 8192, output: 8192 } },
       }))
 
-      const result = await filteredHooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+      const config = makeConfig(PROVIDER_NAME, BASE_URL)
+      await filteredHooks.config!(config)
 
-      expect(result['qwen/qwen3-30b']).toBeDefined()
-      expect(result['bge-m3']).toBeUndefined()
+      expect(config.provider[PROVIDER_NAME].models['qwen/qwen3-30b']).toBeDefined()
+      expect(config.provider[PROVIDER_NAME].models['bge-m3']).toBeUndefined()
     })
 
     it('should apply excludeRegex to filter models', async () => {
@@ -363,13 +369,14 @@ describe('ModelDiscovery Plugin', () => {
         'bge-m3': { name: 'bge-m3', limit: { context: 8192, output: 8192 } },
       }))
 
-      const result = await filteredHooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+      const config = makeConfig(PROVIDER_NAME, BASE_URL)
+      await filteredHooks.config!(config)
 
-      expect(result['qwen/qwen3-30b']).toBeDefined()
-      expect(result['bge-m3']).toBeUndefined()
+      expect(config.provider[PROVIDER_NAME].models['qwen/qwen3-30b']).toBeDefined()
+      expect(config.provider[PROVIDER_NAME].models['bge-m3']).toBeUndefined()
     })
 
-    it('should return all models when no regex filter is configured', async () => {
+    it('should inject all models when no regex filter is configured', async () => {
       mockFetch.mockResolvedValueOnce(makeOpenCodeResponse(PROVIDER_NAME, {
         'model-a': { name: 'model-a', limit: { context: 4096, output: 4096 } },
         'model-b': { name: 'model-b', limit: { context: 4096, output: 4096 } },
@@ -377,9 +384,10 @@ describe('ModelDiscovery Plugin', () => {
       }))
 
       const noFilterHooks = await ModelDiscoveryPlugin(mockInput, { provider: PROVIDER_NAME })
-      const result = await noFilterHooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+      const config = makeConfig(PROVIDER_NAME, BASE_URL)
+      await noFilterHooks.config!(config)
 
-      expect(Object.keys(result)).toHaveLength(3)
+      expect(Object.keys(config.provider[PROVIDER_NAME].models)).toHaveLength(3)
     })
 
     it('should handle invalid regex patterns gracefully', async () => {
@@ -393,10 +401,11 @@ describe('ModelDiscovery Plugin', () => {
         'model-a': { name: 'model-a', limit: { context: 4096, output: 4096 } },
       }))
 
-      const result = await invalidRegexHooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+      const config = makeConfig(PROVIDER_NAME, BASE_URL)
+      await invalidRegexHooks.config!(config)
 
-      // Invalid regex is ignored — no includeRegex means all models pass
-      expect(result['model-a']).toBeDefined()
+      // Invalid regex is ignored — no effective includeRegex means all models pass
+      expect(config.provider[PROVIDER_NAME].models['model-a']).toBeDefined()
       consoleSpy.mockRestore()
     })
   })
@@ -440,7 +449,7 @@ describe('ModelDiscovery Plugin', () => {
       expect(pluginHooks['chat.params']).toBeTypeOf('function')
     })
 
-    it('should do nothing (validation disabled)', async () => {
+    it('should do nothing (no-op)', async () => {
       const input = {
         sessionID: 'test-session',
         model: { id: 'test-model' },
@@ -460,28 +469,32 @@ describe('ModelDiscovery Plugin', () => {
   })
 
   describe('Error Handling', () => {
-    it('should show toast and return empty object when model mapping throws unexpectedly', async () => {
+    it('should show toast when an unexpected error occurs during model injection', async () => {
       const errorHooks = await ModelDiscoveryPlugin(mockInput, { provider: PROVIDER_NAME })
 
-      // Simulate an error that escapes fetchOpenCodeConfig's own try/catch
-      // by having the response.json() throw synchronously in a way that propagates
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: () => { throw new Error('Unexpected processing error') },
-      })
+      mockFetch.mockResolvedValueOnce(makeOpenCodeResponse(PROVIDER_NAME, {
+        'some-model': { name: 'some-model' },
+      }))
 
-      const result = await errorHooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
+      // Freeze config.provider so the assignment config.provider[name] = ... throws
+      const config = makeConfig(PROVIDER_NAME, BASE_URL)
+      Object.freeze(config.provider)
 
-      expect(result).toEqual({})
+      await errorHooks.config!(config)
+
+      expect(mockClient.tui.showToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          body: expect.objectContaining({ message: 'Model discovery failed' }),
+        })
+      )
     })
 
-    it('should not throw when provider hook encounters an error', async () => {
+    it('should not throw when config hook encounters a network error', async () => {
       const errorHooks = await ModelDiscoveryPlugin(mockInput, { provider: PROVIDER_NAME })
       mockFetch.mockRejectedValueOnce(new Error('Network failure'))
 
-      await expect(
-        errorHooks.provider!.models!(makeProviderV2(PROVIDER_NAME, BASE_URL), {})
-      ).resolves.toEqual({})
+      const config = makeConfig(PROVIDER_NAME, BASE_URL)
+      await expect(errorHooks.config!(config)).resolves.toBeUndefined()
     })
   })
 })

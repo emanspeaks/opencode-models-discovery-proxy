@@ -1,6 +1,6 @@
 import type { Plugin, PluginInput, PluginOptions } from "@opencode-ai/plugin"
 import { ToastNotifier } from '../ui/toast-notifier'
-import { createProviderHook } from './provider-hook'
+import { createConfigHook } from './config-hook'
 import { createEventHook } from './event-hook'
 import { createChatParamsHook } from './chat-params-hook'
 import { createPluginLogger } from './logger'
@@ -29,10 +29,10 @@ export const ModelDiscoveryPlugin: Plugin = async (input: PluginInput, options?:
   }
 
   if (pluginConfig.provider) {
-    hooks.provider = createProviderHook(
+    hooks.config = createConfigHook(
       pluginConfig,
       toastNotifier,
-      logger.child({ category: 'provider' })
+      logger.child({ category: 'config' })
     )
   } else {
     logger.warn('No provider configured — set "provider" in plugin options to enable model discovery')
