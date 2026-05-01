@@ -4,7 +4,7 @@
 [![npm downloads](https://img.shields.io/npm/dt/opencode-models-discovery-proxy.svg)](https://www.npmjs.com/package/opencode-models-discovery-proxy)
 [![release](https://github.com/emanspeaks/opencode-models-discovery-proxy/actions/workflows/release.yml/badge.svg)](https://github.com/emanspeaks/opencode-models-discovery-proxy/actions/workflows/release.yml)
 [![license](https://img.shields.io/github/license/emanspeaks/opencode-models-discovery-proxy)](https://github.com/emanspeaks/opencode-models-discovery-proxy/blob/main/LICENSE)
-[![OpenCode](https://img.shields.io/badge/OpenCode-%3E%3D1.4.0-blueviolet)](https://opencode.ai)
+[![OpenCode](https://img.shields.io/badge/OpenCode-%3E%3D1.14.31-blueviolet)](https://opencode.ai)
 
 An [OpenCode](https://opencode.ai) plugin that bridges **[llama-swap-proxy](https://github.com/emanspeaks/llama-swap-proxy)** and OpenCode by automatically populating your provider's model list from the `/v1/opencode` endpoint at startup.
 
@@ -16,11 +16,10 @@ If you are running [llama-swap-proxy](https://github.com/emanspeaks/llama-swap-p
 
 ## How it works
 
-1. OpenCode calls the plugin's `provider` hook at startup for the configured provider
-2. The hook fetches `<baseURL>/v1/opencode` from that provider's configured endpoint
-3. It looks up the entry in the response whose name **exactly matches** the configured provider name
-4. Every model from that entry is returned as a fully-typed `ModelV2` object — capabilities, limits, and modalities are mapped from the server's response
-5. OpenCode merges the returned models into the provider's model list for the session
+1. OpenCode calls the plugin's `config` hook at startup with the full config before initializing providers
+2. The hook reads `baseURL` from your configured provider's options
+3. It fetches `<baseURL>/v1/opencode` and looks up the entry whose name **exactly matches** the configured provider name
+4. Every model from that entry is injected into `config.provider[name].models` — OpenCode then processes the config as if you had written those models statically in `opencode.jsonc`
 
 The exact-name match means two providers sharing the same base URL but with different names will never bleed models into each other.
 
